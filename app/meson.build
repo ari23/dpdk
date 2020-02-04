@@ -15,15 +15,13 @@ apps = [
 	'test-crypto-perf',
 	'test-eventdev',
 	'test-pipeline',
-	'test-pmd']
+	'test-pmd',
+	'test-sad']
 
 # for BSD only
 lib_execinfo = cc.find_library('execinfo', required: false)
 
 default_cflags = machine_args
-
-# specify -D_GNU_SOURCE unconditionally
-default_cflags += '-D_GNU_SOURCE'
 
 foreach app:apps
 	build = true

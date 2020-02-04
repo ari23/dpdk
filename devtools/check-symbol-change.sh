@@ -97,7 +97,7 @@ check_for_rule_violations()
 			then
 				# Just inform the user of this occurrence, but
 				# don't flag it as an error
-				echo -n "INFO: symbol $syname is added but "
+				echo -n "INFO: symbol $symname is added but "
 				echo -n "patch has insuficient context "
 				echo -n "to determine the section name "
 				echo -n "please ensure the version is "
@@ -110,14 +110,29 @@ check_for_rule_violations()
 
 			# A symbol can not enter a non experimental
 			# section directly
-			if [ $? -ne 0 ] && [ "$secname" != 'EXPERIMENTAL' ]
+			if [ -z "$oldsecname" ]
 			then
-				echo -n "ERROR: symbol $symname "
-				echo -n "is added in the $secname "
-				echo -n "section, but is expected to "
-				echo -n "be added in the EXPERIMENTAL "
-				echo "section of the version map"
-				ret=1
+				if [ "$secname" = 'EXPERIMENTAL' ]
+				then
+					echo -n "INFO: symbol $symname has "
+					echo -n "been added to the "
+					echo -n "EXPERIMENTAL section of the "
+					echo "version map"
+					continue
+				else
+					echo -n "ERROR: symbol $symname "
+					echo -n "is added in the $secname "
+					echo -n "section, but is expected to "
+					echo -n "be added in the EXPERIMENTAL "
+					echo "section of the version map"
+					ret=1
+					continue
+				fi
+			fi
+
+			# This symbol is moving inside a section, nothing to do
+			if [ "$oldsecname" = "$secname" ]
+			then
 				continue
 			fi
 

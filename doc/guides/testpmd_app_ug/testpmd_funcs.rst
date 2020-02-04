@@ -33,7 +33,7 @@ If you type a partial command and hit ``<TAB>`` you get a list of the available 
 
 .. note::
 
-   Some examples in this document are too long to fit on one line are are shown wrapped at `"\\"` for display purposes::
+   Some examples in this document are too long to fit on one line are shown wrapped at `"\\"` for display purposes::
 
       testpmd> set flow_ctrl rx (on|off) tx (on|off) (high_water) (low_water) \
                (pause_time) (send_xon) (port_id)
@@ -198,9 +198,7 @@ For example:
    Maximum number of MAC addresses: 64
    Maximum number of MAC addresses of hash filtering: 0
    VLAN offload:
-       strip on
-       filter on
-       qinq(extend) off
+       strip on, filter on, extend off, qinq strip off
    Redirection table size: 512
    Supported flow types:
      ipv4-frag
@@ -253,6 +251,14 @@ show (rxq|txq)
 Display information for a given port's RX/TX queue::
 
    testpmd> show (rxq|txq) info (port_id) (queue_id)
+
+show desc status(rxq|txq)
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Display information for a given port's RX/TX descriptor status::
+
+   testpmd> show port (port_id) (rxq|txq) (queue_id) desc (desc_id) status
+
 
 show config
 ~~~~~~~~~~~
@@ -467,6 +473,58 @@ Show Tx metadata value set for a specific port::
 
    testpmd> show port (port_id) tx_metadata
 
+show port supported ptypes
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Show ptypes supported for a specific port::
+
+   testpmd> show port (port_id) ptypes
+
+set port supported ptypes
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+set packet types classification for a specific port::
+
+   testpmd> set port (port_id) ptypes_mask (mask)
+
+show port mac addresses info
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Show mac addresses added for a specific port::
+
+   testpmd> show port (port_id) macs
+
+
+show port multicast mac addresses info
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Show multicast mac addresses added for a specific port::
+
+   testpmd> show port (port_id) mcast_macs
+
+show device info
+~~~~~~~~~~~~~~~~
+
+Show general information about devices probed::
+
+   testpmd> show device info (<identifier>|all)
+
+For example:
+
+.. code-block:: console
+
+    testpmd> show device info net_pcap0
+
+    ********************* Infos for device net_pcap0 *********************
+    Bus name: vdev
+    Driver name: net_pcap
+    Devargs: iface=enP2p6s0,phy_mac=1
+    Connect to socket: -1
+
+            Port id: 2
+            MAC address: 1E:37:93:28:04:B8
+            Device name: net_pcap0
+
 dump physmem
 ~~~~~~~~~~~~
 
@@ -517,6 +575,25 @@ Dumps the log level for all the dpdk modules::
 
    testpmd> dump_log_types
 
+show (raw_encap|raw_decap)
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Display content of raw_encap/raw_decap buffers in hex::
+
+  testpmd> show <raw_encap|raw_decap> <index>
+  testpmd> show <raw_encap|raw_decap> all
+
+For example::
+
+  testpmd> show raw_encap 6
+
+  index: 6 at [0x1c565b0], len=50
+  00000000: 00 00 00 00 00 00 16 26 36 46 56 66 08 00 45 00 | .......&6FVf..E.
+  00000010: 00 00 00 00 00 00 00 11 00 00 C0 A8 01 06 C0 A8 | ................
+  00000020: 03 06 00 00 00 FA 00 00 00 00 08 00 00 00 00 00 | ................
+  00000030: 06 00                                           | ..
+
+
 Configuration Functions
 -----------------------
 
@@ -563,9 +640,11 @@ Where:
 * ``level`` is the log level.
 
 For example, to change the global log level::
+
 	testpmd> set log global (level)
 
 Regexes can also be used for type. To change log level of user1, user2 and user3::
+
 	testpmd> set log user[1-3] (level)
 
 set nbport
@@ -774,13 +853,6 @@ Set broadcast mode for a VF from the PF::
 
    testpmd> set vf broadcast (port_id) (vf_id) (on|off)
 
-vlan set strip
-~~~~~~~~~~~~~~
-
-Set the VLAN strip on a port::
-
-   testpmd> vlan set strip (on|off) (port_id)
-
 vlan set stripq
 ~~~~~~~~~~~~~~~
 
@@ -816,19 +888,11 @@ Set VLAN antispoof for a VF from the PF::
 
    testpmd> set vf vlan antispoof (port_id) (vf_id) (on|off)
 
-vlan set filter
-~~~~~~~~~~~~~~~
+vlan set (strip|filter|qinq_strip|extend)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Set the VLAN strip/filter/QinQ strip/extend on for a port::
 
-Set the VLAN filter on a port::
-
-   testpmd> vlan set filter (on|off) (port_id)
-
-vlan set qinq
-~~~~~~~~~~~~~
-
-Set the VLAN QinQ (extended queue in queue) on for a port::
-
-   testpmd> vlan set qinq (on|off) (port_id)
+   testpmd> vlan set (strip|filter|qinq_strip|extend) (on|off) (port_id)
 
 vlan set tpid
 ~~~~~~~~~~~~~
@@ -1019,11 +1083,12 @@ Flush all queue region related configuration on a port::
 
 where:
 
-* "on"is just an enable function which server for other configuration,
+* ``on``: is just an enable function which server for other configuration,
   it is for all configuration about queue region from up layer,
   at first will only keep in DPDK software stored in driver,
   only after "flush on", it commit all configuration to HW.
-  "off" is just clean all configuration about queue region just now,
+
+* ``"off``: is just clean all configuration about queue region just now,
   and restore all to DPDK i40e driver default config when start up.
 
 Show all queue region related configuration info on a port::
@@ -1637,7 +1702,7 @@ Enable or disable a per port Rx offloading on all Rx queues of a port::
                   vlan_strip, ipv4_cksum, udp_cksum, tcp_cksum, tcp_lro,
                   qinq_strip, outer_ipv4_cksum, macsec_strip,
                   header_split, vlan_filter, vlan_extend, jumbo_frame,
-                  crc_strip, scatter, timestamp, security, keep_crc
+                  scatter, timestamp, security, keep_crc, rss_hash
 
 This command should be run when the port is stopped, or else it will fail.
 
@@ -1652,7 +1717,7 @@ Enable or disable a per queue Rx offloading only on a specific Rx queue::
                   vlan_strip, ipv4_cksum, udp_cksum, tcp_cksum, tcp_lro,
                   qinq_strip, outer_ipv4_cksum, macsec_strip,
                   header_split, vlan_filter, vlan_extend, jumbo_frame,
-                  crc_strip, scatter, timestamp, security, keep_crc
+                  scatter, timestamp, security, keep_crc
 
 This command should be run when the port is stopped, or else it will fail.
 
@@ -1668,8 +1733,7 @@ Enable or disable a per port Tx offloading on all Tx queues of a port::
                   sctp_cksum, tcp_tso, udp_tso, outer_ipv4_cksum,
                   qinq_insert, vxlan_tnl_tso, gre_tnl_tso,
                   ipip_tnl_tso, geneve_tnl_tso, macsec_insert,
-                  mt_lockfree, multi_segs, mbuf_fast_free, security,
-                  match_metadata
+                  mt_lockfree, multi_segs, mbuf_fast_free, security
 
 This command should be run when the port is stopped, or else it will fail.
 
@@ -1811,6 +1875,52 @@ These commands will set an internal configuration inside testpmd, any following
 flow rule using the action mplsoudp_decap will use the last configuration set.
 To have a different decapsulation header, one of those commands must be called
 before the flow rule creation.
+
+Config Raw Encapsulation
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Configure the raw data to be used when encapsulating a packet by
+rte_flow_action_raw_encap::
+
+ set raw_encap {index} {item} [/ {item} [...]] / end_set
+
+There are multiple global buffers for ``raw_encap``, this command will set one
+internal buffer index by ``{index}``.
+If there is no ``{index}`` specified::
+
+ set raw_encap {item} [/ {item} [...]] / end_set
+
+the default index ``0`` is used.
+In order to use different encapsulating header, ``index`` must be specified
+during the flow rule creation::
+
+ testpmd> flow create 0 egress pattern eth / ipv4 / end actions
+        raw_encap index 2 / end
+
+Otherwise the default index ``0`` is used.
+
+Config Raw Decapsulation
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+Configure the raw data to be used when decapsulating a packet by
+rte_flow_action_raw_decap::
+
+ set raw_decap {index} {item} [/ {item} [...]] / end_set
+
+There are multiple global buffers for ``raw_decap``, this command will set
+one internal buffer index by ``{index}``.
+If there is no ``{index}`` specified::
+
+ set raw_decap {item} [/ {item} [...]] / end_set
+
+the default index ``0`` is used.
+In order to use different decapsulating header, ``index`` must be specified
+during the flow rule creation::
+
+ testpmd> flow create 0 egress pattern eth / ipv4 / end actions
+          raw_encap index 3 / end
+
+Otherwise the default index ``0`` is used.
 
 Port Functions
 --------------
@@ -1991,6 +2101,15 @@ Close all ports or a specific port::
 
    testpmd> port close (port_id|all)
 
+port reset
+~~~~~~~~~~
+
+Reset all ports or a specific port::
+
+   testpmd> port reset (port_id|all)
+
+User should stop port(s) before resetting and (re-)start after reset.
+
 port config - queue ring size
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -2049,91 +2168,23 @@ Set the maximum packet length::
 
 This is equivalent to the ``--max-pkt-len`` command-line option.
 
-port config - CRC Strip
-~~~~~~~~~~~~~~~~~~~~~~~
+port config - max-lro-pkt-size
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Set hardware CRC stripping on or off for all ports::
+Set the maximum LRO aggregated packet size::
 
-   testpmd> port config all crc-strip (on|off)
+   testpmd> port config all max-lro-pkt-size (value)
 
-CRC stripping is on by default.
-
-The ``off`` option is equivalent to the ``--disable-crc-strip`` command-line option.
-
-port config - scatter
-~~~~~~~~~~~~~~~~~~~~~~~
-
-Set RX scatter mode on or off for all ports::
-
-   testpmd> port config all scatter (on|off)
-
-RX scatter mode is off by default.
-
-The ``on`` option is equivalent to the ``--enable-scatter`` command-line option.
-
-port config - RX Checksum
-~~~~~~~~~~~~~~~~~~~~~~~~~
-
-Set hardware RX checksum offload to on or off for all ports::
-
-   testpmd> port config all rx-cksum (on|off)
-
-Checksum offload is off by default.
-
-The ``on`` option is equivalent to the ``--enable-rx-cksum`` command-line option.
-
-port config - VLAN
-~~~~~~~~~~~~~~~~~~
-
-Set hardware VLAN on or off for all ports::
-
-   testpmd> port config all hw-vlan (on|off)
-
-Hardware VLAN is off by default.
-
-The ``on`` option is equivalent to the ``--enable-hw-vlan`` command-line option.
-
-port config - VLAN filter
-~~~~~~~~~~~~~~~~~~~~~~~~~
-
-Set hardware VLAN filter on or off for all ports::
-
-   testpmd> port config all hw-vlan-filter (on|off)
-
-Hardware VLAN filter is off by default.
-
-The ``on`` option is equivalent to the ``--enable-hw-vlan-filter`` command-line option.
-
-port config - VLAN strip
-~~~~~~~~~~~~~~~~~~~~~~~~
-
-Set hardware VLAN strip on or off for all ports::
-
-   testpmd> port config all hw-vlan-strip (on|off)
-
-Hardware VLAN strip is off by default.
-
-The ``on`` option is equivalent to the ``--enable-hw-vlan-strip`` command-line option.
-
-port config - VLAN extend
-~~~~~~~~~~~~~~~~~~~~~~~~~
-
-Set hardware VLAN extend on or off for all ports::
-
-   testpmd> port config all hw-vlan-extend (on|off)
-
-Hardware VLAN extend is off by default.
-
-The ``on`` option is equivalent to the ``--enable-hw-vlan-extend`` command-line option.
+This is equivalent to the ``--max-lro-pkt-size`` command-line option.
 
 port config - Drop Packets
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Set packet drop for packets with no descriptors on or off for all ports::
+Enable or disable packet drop on all RX queues of all ports when no receive buffers available::
 
    testpmd> port config all drop-en (on|off)
 
-Packet dropping for packets with no descriptors is off by default.
+Packet dropping when no receive buffers available is off by default.
 
 The ``on`` option is equivalent to the ``--enable-drop-en`` command-line option.
 
@@ -2236,11 +2287,13 @@ port config input set
 ~~~~~~~~~~~~~~~~~~~~~
 
 Config RSS/FDIR/FDIR flexible payload input set for some pctype::
+
    testpmd> port config (port_id) pctype (pctype_id) \
             (hash_inset|fdir_inset|fdir_flx_inset) \
 	    (get|set|clear) field (field_idx)
 
 Clear RSS/FDIR/FDIR flexible payload input set for some pctype::
+
    testpmd> port config (port_id) pctype (pctype_id) \
             (hash_inset|fdir_inset|fdir_flx_inset) clear all
 
@@ -2253,6 +2306,7 @@ port config udp_tunnel_port
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 Add/remove UDP tunnel port for VXLAN/GENEVE tunneling protocols::
+
     testpmd> port config (port_id) udp_tunnel_port add|rm vxlan|geneve|vxlan-gpe (udp_port)
 
 port config tx_metadata
@@ -2262,6 +2316,16 @@ Set Tx metadata value per port.
 testpmd will add this value to any Tx packet sent from this port::
 
    testpmd> port config (port_id) tx_metadata (value)
+
+port config dynf
+~~~~~~~~~~~~~~~~
+
+Set/clear dynamic flag per port.
+testpmd will register this flag in the mbuf (same registration
+for both Tx and Rx). Then set/clear this flag for each Tx
+packet sent from this port. The set bit only works for Tx packet::
+
+   testpmd> port config (port_id) dynf (name) (set|clear)
 
 port config mtu
 ~~~~~~~~~~~~~~~
@@ -2282,6 +2346,47 @@ hash of input [IP] packets received on port::
                      ipv6-other|l2-payload|ipv6-ex|ipv6-tcp-ex|\
                      ipv6-udp-ex <string of hex digits \
                      (variable length, NIC dependent)>)
+
+Device Functions
+----------------
+
+The following sections show functions for device operations.
+
+device detach
+~~~~~~~~~~~~~
+
+Detach a device specified by pci address or virtual device args::
+
+   testpmd> device detach (identifier)
+
+Before detaching a device associated with ports, the ports should be stopped and closed.
+
+For example, to detach a pci device whose address is 0002:03:00.0.
+
+.. code-block:: console
+
+    testpmd> device detach 0002:03:00.0
+    Removing a device...
+    Port 1 is now closed
+    EAL: Releasing pci mapped resource for 0002:03:00.0
+    EAL: Calling pci_unmap_resource for 0002:03:00.0 at 0x218a050000
+    EAL: Calling pci_unmap_resource for 0002:03:00.0 at 0x218c050000
+    Device 0002:03:00.0 is detached
+    Now total ports is 1
+
+For example, to detach a port created by pcap PMD.
+
+.. code-block:: console
+
+    testpmd> device detach net_pcap0
+    Removing a device...
+    Port 0 is now closed
+    Device net_pcap0 is detached
+    Now total ports is 0
+    Done
+
+In this case, identifier is ``net_pcap0``.
+This identifier format is the same as ``--vdev`` format of DPDK applications.
 
 Link Bonding Functions
 ----------------------
@@ -2679,7 +2784,7 @@ Traffic Management
 ------------------
 
 The following section shows functions for configuring traffic management on
-on the ethernet device through the use of generic TM API.
+the ethernet device through the use of generic TM API.
 
 show port traffic management capability
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -3377,7 +3482,7 @@ set_hash_global_config
 
 Set the global configurations of hash filters::
 
-   set_hash_global_config (port_id) (toeplitz|simple_xor|default) \
+   set_hash_global_config (port_id) (toeplitz|simple_xor|symmetric_toeplitz|default) \
    (ipv4|ipv4-frag|ipv4-tcp|ipv4-udp|ipv4-sctp|ipv4-other|ipv6|ipv6-frag| \
    ipv6-tcp|ipv6-udp|ipv6-sctp|ipv6-other|l2_payload|<flow_id>) \
    (enable|disable)
@@ -3498,6 +3603,10 @@ following sections.
 - Restrict ingress traffic to the defined flow rules::
 
    flow isolate {port_id} {boolean}
+
+- Dump internal representation information of all flows in hardware::
+
+   flow dump {port_id} {output_file}
 
 Validating flow rules
 ~~~~~~~~~~~~~~~~~~~~~
@@ -3798,6 +3907,10 @@ This section lists supported pattern items and their attributes, if any.
 
   - ``protocol {unsigned}``: protocol type.
 
+- ``gre_key``: match GRE optional key field.
+
+  - ``value {unsigned}``: key value.
+
 - ``fuzzy``: fuzzy pattern match, expect faster than default.
 
   - ``thresh {unsigned}``: accuracy threshold.
@@ -3856,6 +3969,23 @@ This section lists supported pattern items and their attributes, if any.
 - ``meta``: match application specific metadata.
 
   - ``data {unsigned}``: metadata value.
+
+- ``gtp_psc``: match GTP PDU extension header with type 0x85.
+
+  - ``pdu_type {unsigned}``: PDU type.
+  - ``qfi {unsigned}``: QoS flow identifier.
+
+- ``pppoes``, ``pppoed``: match PPPoE header.
+
+  - ``session_id {unsigned}``: session identifier.
+
+- ``pppoe_proto_id``: match PPPoE session protocol identifier.
+
+  - ``proto_id {unsigned}``: PPP protocol identifier.
+
+- ``l2tpv3oip``: match L2TPv3 over IP header.
+
+  - ``session_id {unsigned}``: L2TPv3 over IP session identifier.
 
 Actions list
 ^^^^^^^^^^^^
@@ -4100,6 +4230,30 @@ This section lists supported actions and their attributes, if any.
 
   - ``mac_addr {MAC-48}``: new destination MAC address
 
+- ``inc_tcp_seq``: Increase sequence number in the outermost TCP header.
+
+  - ``value {unsigned}``: Value to increase TCP sequence number by.
+
+- ``dec_tcp_seq``: Decrease sequence number in the outermost TCP header.
+
+  - ``value {unsigned}``: Value to decrease TCP sequence number by.
+
+- ``inc_tcp_ack``: Increase acknowledgment number in the outermost TCP header.
+
+  - ``value {unsigned}``: Value to increase TCP acknowledgment number by.
+
+- ``dec_tcp_ack``: Decrease acknowledgment number in the outermost TCP header.
+
+  - ``value {unsigned}``: Value to decrease TCP acknowledgment number by.
+
+- ``set_ipv4_dscp``: Set IPv4 DSCP value with specified value
+
+  - ``dscp_value {unsigned}``: The new DSCP value to be set
+
+- ``set_ipv6_dscp``: Set IPv6 DSCP value with specified value
+
+  - ``dscp_value {unsigned}``: The new DSCP value to be set
+
 Destroying flow rules
 ~~~~~~~~~~~~~~~~~~~~~
 
@@ -4316,13 +4470,29 @@ Disabling isolated mode::
  Ingress traffic on port 0 is not restricted anymore to the defined flow rules
  testpmd>
 
+Dumping HW internal information
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``flow dump`` dumps the hardware's internal representation information of
+all flows. It is bound to ``rte_flow_dev_dump()``::
+
+   flow dump {port_id} {output_file}
+
+If successful, it will show::
+
+   Flow dump finished
+
+Otherwise, it will complain error occurred::
+
+   Caught error type [...] ([...]): [...]
+
 Sample QinQ flow rules
 ~~~~~~~~~~~~~~~~~~~~~~
 
 Before creating QinQ rule(s) the following commands should be issued to enable QinQ::
 
    testpmd> port stop 0
-   testpmd> vlan set qinq on 0
+   testpmd> vlan set qinq_strip on 0
 
 The above command sets the inner and outer TPID's to 0x8100.
 
@@ -4614,6 +4784,44 @@ IPv6 MPLSoUDP with VLAN outer header::
  testpmd> flow create 0 ingress pattern eth / vlan / ipv6 / udp / mpls / end
         actions mplsoudp_decap / l2_encap / end
 
+Sample Raw encapsulation rule
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Raw encapsulation configuration can be set by the following commands
+
+Eecapsulating VxLAN::
+
+ testpmd> set raw_encap 4 eth src is 10:11:22:33:44:55 / vlan tci is 1
+        inner_type is 0x0800 / ipv4 / udp dst is 4789 / vxlan vni
+        is 2 / end_set
+ testpmd> flow create 0 egress pattern eth / ipv4 / end actions
+        raw_encap index 4 / end
+
+Sample Raw decapsulation rule
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Raw decapsulation configuration can be set by the following commands
+
+Decapsulating VxLAN::
+
+ testpmd> set raw_decap eth / ipv4 / udp / vxlan / end_set
+ testpmd> flow create 0 ingress pattern eth / ipv4 / udp / vxlan / eth / ipv4 /
+        end actions raw_decap / queue index 0 / end
+
+Sample ESP rules
+~~~~~~~~~~~~~~~~
+
+ESP rules can be created by the following commands::
+
+ testpmd> flow create 0 ingress pattern eth / ipv4 / esp spi is 1 / end actions
+        queue index 3 / end
+ testpmd> flow create 0 ingress pattern eth / ipv4 / udp / esp spi is 1 / end
+        actions queue index 3 / end
+ testpmd> flow create 0 ingress pattern eth / ipv6 / esp spi is 1 / end actions
+        queue index 3 / end
+ testpmd> flow create 0 ingress pattern eth / ipv6 / udp / esp spi is 1 / end
+        actions queue index 3 / end
+
 BPF Functions
 --------------
 
@@ -4645,13 +4853,13 @@ For example:
    cd examples/bpf
    clang -O2 -target bpf -c t1.c
 
-Then to load (and JIT compile) t1.o at RX queue 0, port 1::
+Then to load (and JIT compile) t1.o at RX queue 0, port 1:
 
 .. code-block:: console
 
    testpmd> bpf-load rx 1 0 J ./dpdk.org/examples/bpf/t1.o
 
-To load (not JITed) t1.o at TX queue 0, port 0::
+To load (not JITed) t1.o at TX queue 0, port 0:
 
 .. code-block:: console
 

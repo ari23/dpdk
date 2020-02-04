@@ -263,9 +263,9 @@ To send a request, a message descriptor ``rte_mp_msg`` must be populated.
 Additionally, a ``timespec`` value must be specified as a timeout, after which
 IPC will stop waiting and return.
 
-For synchronous synchronous requests, the ``rte_mp_reply`` descriptor must also
-be created. This is where the responses will be stored. The list of fields that
-will be populated by IPC are as follows:
+For synchronous requests, the ``rte_mp_reply`` descriptor must also be created.
+This is where the responses will be stored.
+The list of fields that will be populated by IPC are as follows:
 
 * ``nb_sent`` - number indicating how many requests were sent (i.e. how many
   peer processes were active at the time of the request).
@@ -309,6 +309,13 @@ If a response is required, a new ``rte_mp_msg`` message descriptor must be
 constructed and sent via ``rte_mp_reply()`` function, along with ``peer``
 pointer. The resulting response will then be delivered to the correct requestor.
 
+.. warning::
+    Simply returning a value when processing a request callback will not send a
+    response to the request - it must always be explicitly sent even in case
+    of errors. Implementation of error signalling rests with the application,
+    there is no built-in way to indicate success or error for a request. Failing
+    to do so will cause the requestor to time out while waiting on a response.
+
 Misc considerations
 ~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -317,6 +324,11 @@ requests (i.e. sending a request while responding to another request) is not
 supported. However, since sending messages (not requests) does not involve an
 IPC thread, sending messages while processing another message or request is
 supported.
+
+Since the memory sybsystem uses IPC internally, memory allocations and IPC must
+not be mixed: it is not safe to use IPC inside a memory-related callback, nor is
+it safe to allocate/free memory inside IPC callbacks. Attempting to do so may
+lead to a deadlock.
 
 Asynchronous request callbacks may be triggered either from IPC thread or from
 interrupt thread, depending on whether the request has timed out. It is

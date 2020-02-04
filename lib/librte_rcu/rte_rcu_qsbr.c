@@ -14,7 +14,6 @@
 #include <rte_memory.h>
 #include <rte_malloc.h>
 #include <rte_eal.h>
-#include <rte_eal_memconfig.h>
 #include <rte_atomic.h>
 #include <rte_per_lcore.h>
 #include <rte_lcore.h>
@@ -23,7 +22,7 @@
 #include "rte_rcu_qsbr.h"
 
 /* Get the memory size of QSBR variable */
-size_t __rte_experimental
+size_t
 rte_rcu_qsbr_get_memsize(uint32_t max_threads)
 {
 	size_t sz;
@@ -49,7 +48,7 @@ rte_rcu_qsbr_get_memsize(uint32_t max_threads)
 }
 
 /* Initialize a quiescent state variable */
-int __rte_experimental
+int
 rte_rcu_qsbr_init(struct rte_rcu_qsbr *v, uint32_t max_threads)
 {
 	size_t sz;
@@ -73,6 +72,7 @@ rte_rcu_qsbr_init(struct rte_rcu_qsbr *v, uint32_t max_threads)
 			__RTE_QSBR_THRID_ARRAY_ELM_SIZE) /
 			__RTE_QSBR_THRID_ARRAY_ELM_SIZE;
 	v->token = __RTE_QSBR_CNT_INIT;
+	v->acked_token = __RTE_QSBR_CNT_INIT - 1;
 
 	return 0;
 }
@@ -80,7 +80,7 @@ rte_rcu_qsbr_init(struct rte_rcu_qsbr *v, uint32_t max_threads)
 /* Register a reader thread to report its quiescent state
  * on a QS variable.
  */
-int __rte_experimental
+int
 rte_rcu_qsbr_thread_register(struct rte_rcu_qsbr *v, unsigned int thread_id)
 {
 	unsigned int i, id, success;
@@ -132,7 +132,7 @@ rte_rcu_qsbr_thread_register(struct rte_rcu_qsbr *v, unsigned int thread_id)
 /* Remove a reader thread, from the list of threads reporting their
  * quiescent state on a QS variable.
  */
-int __rte_experimental
+int
 rte_rcu_qsbr_thread_unregister(struct rte_rcu_qsbr *v, unsigned int thread_id)
 {
 	unsigned int i, id, success;
@@ -158,7 +158,7 @@ rte_rcu_qsbr_thread_unregister(struct rte_rcu_qsbr *v, unsigned int thread_id)
 	/* Check if the thread is already unregistered */
 	old_bmap = __atomic_load_n(__RTE_QSBR_THRID_ARRAY_ELM(v, i),
 					__ATOMIC_RELAXED);
-	if (old_bmap & ~(1UL << id))
+	if (!(old_bmap & (1UL << id)))
 		return 0;
 
 	do {
@@ -175,7 +175,7 @@ rte_rcu_qsbr_thread_unregister(struct rte_rcu_qsbr *v, unsigned int thread_id)
 		if (success)
 			__atomic_fetch_sub(&v->num_threads,
 						1, __ATOMIC_RELAXED);
-		else if (old_bmap & ~(1UL << id))
+		else if (!(old_bmap & (1UL << id)))
 			/* Someone else unregistered this thread.
 			 * Counter should not be incremented.
 			 */
@@ -186,7 +186,7 @@ rte_rcu_qsbr_thread_unregister(struct rte_rcu_qsbr *v, unsigned int thread_id)
 }
 
 /* Wait till the reader threads have entered quiescent state. */
-void __rte_experimental
+void
 rte_rcu_qsbr_synchronize(struct rte_rcu_qsbr *v, unsigned int thread_id)
 {
 	uint64_t t;
@@ -206,7 +206,7 @@ rte_rcu_qsbr_synchronize(struct rte_rcu_qsbr *v, unsigned int thread_id)
 }
 
 /* Dump the details of a single quiescent state variable to a file. */
-int __rte_experimental
+int
 rte_rcu_qsbr_dump(FILE *f, struct rte_rcu_qsbr *v)
 {
 	uint64_t bmap;
@@ -234,7 +234,7 @@ rte_rcu_qsbr_dump(FILE *f, struct rte_rcu_qsbr *v)
 		id = i << __RTE_QSBR_THRID_INDEX_SHIFT;
 		while (bmap) {
 			t = __builtin_ctzl(bmap);
-			fprintf(f, "%d ", id + t);
+			fprintf(f, "%u ", id + t);
 
 			bmap &= ~(1UL << t);
 		}
@@ -245,6 +245,9 @@ rte_rcu_qsbr_dump(FILE *f, struct rte_rcu_qsbr *v)
 	fprintf(f, "  Token = %"PRIu64"\n",
 			__atomic_load_n(&v->token, __ATOMIC_ACQUIRE));
 
+	fprintf(f, "  Least Acknowledged Token = %"PRIu64"\n",
+			__atomic_load_n(&v->acked_token, __ATOMIC_ACQUIRE));
+
 	fprintf(f, "Quiescent State Counts for readers:\n");
 	for (i = 0; i < v->num_elems; i++) {
 		bmap = __atomic_load_n(__RTE_QSBR_THRID_ARRAY_ELM(v, i),
@@ -252,7 +255,7 @@ rte_rcu_qsbr_dump(FILE *f, struct rte_rcu_qsbr *v)
 		id = i << __RTE_QSBR_THRID_INDEX_SHIFT;
 		while (bmap) {
 			t = __builtin_ctzl(bmap);
-			fprintf(f, "thread ID = %d, count = %"PRIu64", lock count = %u\n",
+			fprintf(f, "thread ID = %u, count = %"PRIu64", lock count = %u\n",
 				id + t,
 				__atomic_load_n(
 					&v->qsbr_cnt[id + t].cnt,

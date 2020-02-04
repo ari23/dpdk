@@ -14,17 +14,25 @@
 
 #define BITS_PER_BYTE	8
 
+#define _FORCE_
+
 #define ICE_BYTES_PER_WORD	2
 #define ICE_BYTES_PER_DWORD	4
 #define ICE_MAX_TRAFFIC_CLASS	8
 
-#ifndef MIN_T
-#define MIN_T(_t, _a, _b)	min((_t)(_a), (_t)(_b))
-#endif
+/**
+ * ROUND_UP - round up to next arbitrary multiple (not a power of 2)
+ * @a: value to round up
+ * @b: arbitrary multiple
+ *
+ * Round up to the next multiple of the arbitrary b.
+ * Note, when b is a power of 2 use ICE_ALIGN() instead.
+ */
+#define ROUND_UP(a, b)	((b) * DIVIDE_AND_ROUND_UP((a), (b)))
 
-#ifndef IS_ASCII
-#define IS_ASCII(_ch)  ((_ch) < 0x80)
-#endif
+#define MIN_T(_t, _a, _b)	min((_t)(_a), (_t)(_b))
+
+#define IS_ASCII(_ch)	((_ch) < 0x80)
 
 #include "ice_status.h"
 #include "ice_hw_autogen.h"
@@ -36,14 +44,36 @@
 #include "ice_flex_type.h"
 #include "ice_protocol_type.h"
 
+/**
+ * ice_is_pow2 - check if integer value is a power of 2
+ * @val: unsigned integer to be validated
+ */
+static inline bool ice_is_pow2(u64 val)
+{
+	return (val && !(val & (val - 1)));
+}
+
+/**
+ * ice_ilog2 - Calculates integer log base 2 of a number
+ * @n: number on which to perform operation
+ */
+static inline int ice_ilog2(u64 n)
+{
+	int i;
+
+	for (i = 63; i >= 0; i--)
+		if (((u64)1 << i) & n)
+			return i;
+
+	return -1;
+}
+
 static inline bool ice_is_tc_ena(ice_bitmap_t bitmap, u8 tc)
 {
 	return ice_is_bit_set(&bitmap, tc);
 }
 
-#ifndef DIV_64BIT
 #define DIV_64BIT(n, d) ((n) / (d))
-#endif /* DIV_64BIT */
 
 static inline u64 round_up_64bit(u64 a, u32 b)
 {
@@ -68,9 +98,10 @@ static inline u32 ice_round_to_num(u32 N, u32 R)
 #define ICE_HI_WORD(x)		((u16)(((x) >> 16) & 0xFFFF))
 
 /* debug masks - set these bits in hw->debug_mask to control output */
+#define ICE_DBG_TRACE		BIT_ULL(0) /* for function-trace only */
 #define ICE_DBG_INIT		BIT_ULL(1)
 #define ICE_DBG_RELEASE		BIT_ULL(2)
-
+#define ICE_DBG_FW_LOG		BIT_ULL(3)
 #define ICE_DBG_LINK		BIT_ULL(4)
 #define ICE_DBG_PHY		BIT_ULL(5)
 #define ICE_DBG_QCTX		BIT_ULL(6)
@@ -97,10 +128,12 @@ static inline u32 ice_round_to_num(u32 N, u32 R)
 #define ICE_DBG_USER		BIT_ULL(31)
 #define ICE_DBG_ALL		0xFFFFFFFFFFFFFFFFULL
 
+#define __ALWAYS_UNUSED
 
-
-
-
+#define IS_ETHER_ADDR_EQUAL(addr1, addr2) \
+	(((bool)((((u16 *)(addr1))[0] == ((u16 *)(addr2))[0]))) && \
+	 ((bool)((((u16 *)(addr1))[1] == ((u16 *)(addr2))[1]))) && \
+	 ((bool)((((u16 *)(addr1))[2] == ((u16 *)(addr2))[2]))))
 
 enum ice_aq_res_ids {
 	ICE_NVM_RES_ID = 1,
@@ -136,11 +169,25 @@ enum ice_fc_mode {
 	ICE_FC_DFLT
 };
 
+enum ice_phy_cache_mode {
+	ICE_FC_MODE = 0,
+	ICE_SPEED_MODE,
+	ICE_FEC_MODE
+};
+
 enum ice_fec_mode {
 	ICE_FEC_NONE = 0,
 	ICE_FEC_RS,
 	ICE_FEC_BASER,
 	ICE_FEC_AUTO
+};
+
+struct ice_phy_cache_mode_data {
+	union {
+		enum ice_fec_mode curr_user_fec_req;
+		enum ice_fc_mode curr_user_fc_req;
+		u16 curr_user_speed_req;
+	} data;
 };
 
 enum ice_set_fc_aq_failures {
@@ -170,9 +217,7 @@ enum ice_media_type {
 enum ice_vsi_type {
 	ICE_VSI_PF = 0,
 	ICE_VSI_CTRL = 3,	/* equates to ICE_VSI_PF with 1 queue pair */
-#ifdef ADQ_SUPPORT
-	ICE_VSI_CHNL = 4,
-#endif /* ADQ_SUPPORT */
+	ICE_VSI_LB = 6,
 };
 
 struct ice_link_status {
@@ -220,6 +265,13 @@ struct ice_phy_info {
 	u64 phy_type_high;
 	enum ice_media_type media_type;
 	u8 get_link_info;
+	/* Please refer to struct ice_aqc_get_link_status_data to get
+	 * detail of enable bit in curr_user_speed_req
+	 */
+	u16 curr_user_speed_req;
+	enum ice_fec_mode curr_user_fec_req;
+	enum ice_fc_mode curr_user_fc_req;
+	struct ice_aqc_set_phy_cfg_data curr_user_phy_cfg;
 };
 
 #define ICE_MAX_NUM_MIRROR_RULES	64
@@ -232,6 +284,10 @@ enum ice_fltr_ptype {
 	ICE_FLTR_PTYPE_NONF_IPV4_TCP,
 	ICE_FLTR_PTYPE_NONF_IPV4_SCTP,
 	ICE_FLTR_PTYPE_NONF_IPV4_OTHER,
+	ICE_FLTR_PTYPE_NONF_IPV4_GTPU_IPV4_UDP,
+	ICE_FLTR_PTYPE_NONF_IPV4_GTPU_IPV4_TCP,
+	ICE_FLTR_PTYPE_NONF_IPV4_GTPU_IPV4_ICMP,
+	ICE_FLTR_PTYPE_NONF_IPV4_GTPU_IPV4_OTHER,
 	ICE_FLTR_PTYPE_FRAG_IPV4,
 	ICE_FLTR_PTYPE_NONF_IPV6_UDP,
 	ICE_FLTR_PTYPE_NONF_IPV6_TCP,
@@ -240,13 +296,19 @@ enum ice_fltr_ptype {
 	ICE_FLTR_PTYPE_MAX,
 };
 
-/* 6 VSI = 1 ICE_VSI_PF + 1 ICE_VSI_CTRL + 4 ICE_VSI_CHNL */
-#define ICE_MAX_FDIR_VSI_PER_FILTER	6
+enum ice_fd_hw_seg {
+	ICE_FD_HW_SEG_NON_TUN = 0,
+	ICE_FD_HW_SEG_TUN,
+	ICE_FD_HW_SEG_MAX,
+};
+
+/* 2 VSI = 1 ICE_VSI_PF + 1 ICE_VSI_CTRL */
+#define ICE_MAX_FDIR_VSI_PER_FILTER	2
 
 struct ice_fd_hw_prof {
-	struct ice_flow_seg_info *fdir_seg;
+	struct ice_flow_seg_info *fdir_seg[ICE_FD_HW_SEG_MAX];
 	int cnt;
-	u64 entry_h[ICE_MAX_FDIR_VSI_PER_FILTER];
+	u64 entry_h[ICE_MAX_FDIR_VSI_PER_FILTER][ICE_FD_HW_SEG_MAX];
 	u16 vsi_h[ICE_MAX_FDIR_VSI_PER_FILTER];
 };
 
@@ -324,7 +386,6 @@ struct ice_hw_common_caps {
 	u8 proxy_support;
 };
 
-
 /* Function specific capabilities */
 struct ice_hw_func_caps {
 	struct ice_hw_common_caps common_cap;
@@ -338,8 +399,8 @@ struct ice_hw_dev_caps {
 	struct ice_hw_common_caps common_cap;
 	u32 num_vsi_allocd_to_host;	/* Excluding EMP VSI */
 	u32 num_flow_director_fltr;	/* Number of FD filters available */
+	u32 num_funcs;
 };
-
 
 /* Information about MAC such as address, etc... */
 struct ice_mac_info {
@@ -415,9 +476,11 @@ struct ice_nvm_info {
 	u32 eetrack;			/* NVM data version */
 	u32 oem_ver;			/* OEM version info */
 	u16 sr_words;			/* Shadow RAM size in words */
-	u16 ver;			/* NVM package version */
+	u16 ver;			/* dev starter version */
 	u8 blank_nvm_mode;		/* is NVM empty (no FW present)*/
 };
+
+#define ICE_NVM_VER_LEN	32
 
 /* Max number of port to queue branches w.r.t topology */
 #define ICE_TXSCHED_MAX_BRANCHES ICE_MAX_TRAFFIC_CLASS
@@ -504,7 +567,6 @@ enum ice_rl_type {
 #define ICE_TXSCHED_GET_RL_WAKEUP_MV(p) LE16_TO_CPU((p)->info.wake_up_calc)
 #define ICE_TXSCHED_GET_RL_ENCODE(p) LE16_TO_CPU((p)->info.rl_encode)
 
-
 /* The following tree example shows the naming conventions followed under
  * ice_port_info struct for default scheduler tree topology.
  *
@@ -555,6 +617,14 @@ struct ice_bw_type_info {
 	struct ice_bw cir_bw;
 	struct ice_bw eir_bw;
 	u32 shared_bw;
+};
+
+/* VSI queue context structure for given TC */
+struct ice_q_ctx {
+	u16  q_handle;
+	u32  q_teid;
+	/* bw_t_info saves queue BW information */
+	struct ice_bw_type_info bw_t_info;
 };
 
 /* VSI type list entry to locate corresponding VSI/aggregator nodes */
@@ -628,6 +698,8 @@ struct ice_port_info {
 	u8 port_state;
 #define ICE_SCHED_PORT_STATE_INIT	0x0
 #define ICE_SCHED_PORT_STATE_READY	0x1
+	u8 lport;
+#define ICE_LPORT_MASK			0xff
 	u16 dflt_tx_vsi_rule_id;
 	u16 dflt_tx_vsi_num;
 	u16 dflt_rx_vsi_rule_id;
@@ -636,41 +708,27 @@ struct ice_port_info {
 	struct ice_mac_info mac;
 	struct ice_phy_info phy;
 	struct ice_lock sched_lock;	/* protect access to TXSched tree */
+	struct ice_sched_node *
+		sib_head[ICE_MAX_TRAFFIC_CLASS][ICE_AQC_TOPO_MAX_LEVEL_NUM];
 	/* List contain profile ID(s) and other params per layer */
 	struct LIST_HEAD_TYPE rl_prof_list[ICE_AQC_TOPO_MAX_LEVEL_NUM];
+	struct ice_bw_type_info tc_node_bw_t_info[ICE_MAX_TRAFFIC_CLASS];
 	struct ice_dcbx_cfg local_dcbx_cfg;	/* Oper/Local Cfg */
 	/* DCBX info */
 	struct ice_dcbx_cfg remote_dcbx_cfg;	/* Peer Cfg */
 	struct ice_dcbx_cfg desired_dcbx_cfg;	/* CEE Desired Cfg */
 	/* LLDP/DCBX Status */
-	u8 dcbx_status;
-	u8 is_sw_lldp;
-	u8 lport;
-#define ICE_LPORT_MASK		0xff
-	u8 is_vf;
+	u8 dcbx_status:3;		/* see ICE_DCBX_STATUS_DIS */
+	u8 is_sw_lldp:1;
+	u8 is_vf:1;
 };
 
 struct ice_switch_info {
 	struct LIST_HEAD_TYPE vsi_list_map_head;
 	struct ice_sw_recipe *recp_list;
-};
+	u16 prof_res_bm_init;
 
-/* FW logging configuration */
-struct ice_fw_log_evnt {
-	u8 cfg : 4;	/* New event enables to configure */
-	u8 cur : 4;	/* Current/active event enables */
-};
-
-struct ice_fw_log_cfg {
-	u8 cq_en : 1;    /* FW logging is enabled via the control queue */
-	u8 uart_en : 1;  /* FW logging is enabled via UART for all PFs */
-	u8 actv_evnts;   /* Cumulation of currently enabled log events */
-
-#define ICE_FW_LOG_EVNT_INFO	(ICE_AQC_FW_LOG_INFO_EN >> ICE_AQC_FW_LOG_EN_S)
-#define ICE_FW_LOG_EVNT_INIT	(ICE_AQC_FW_LOG_INIT_EN >> ICE_AQC_FW_LOG_EN_S)
-#define ICE_FW_LOG_EVNT_FLOW	(ICE_AQC_FW_LOG_FLOW_EN >> ICE_AQC_FW_LOG_EN_S)
-#define ICE_FW_LOG_EVNT_ERR	(ICE_AQC_FW_LOG_ERR_EN >> ICE_AQC_FW_LOG_EN_S)
-	struct ice_fw_log_evnt evnts[ICE_AQC_FW_LOG_ID_MAX];
+	ice_declare_bitmap(prof_res_bm[ICE_MAX_NUM_PROFILES], ICE_MAX_FV_WORDS);
 };
 
 /* Port hardware description */
@@ -697,6 +755,7 @@ struct ice_hw {
 	u8 pf_id;		/* device profile info */
 
 	u16 max_burst_size;	/* driver sets this value */
+
 	/* Tx Scheduler values */
 	u16 num_tx_sched_layers;
 	u16 num_tx_sched_phys_layers;
@@ -705,7 +764,6 @@ struct ice_hw {
 	u8 sw_entry_point_layer;
 	u16 max_children[ICE_AQC_TOPO_MAX_LEVEL_NUM];
 	struct LIST_HEAD_TYPE agg_list;	/* lists all aggregator */
-	struct ice_bw_type_info tc_node_bw_t_info[ICE_MAX_TRAFFIC_CLASS];
 	struct ice_vsi_ctx *vsi_ctx[ICE_MAX_VSI];
 	u8 evb_veb;		/* true for VEB, false for VEPA */
 	u8 reset_ongoing;	/* true if HW is in reset, false otherwise */
@@ -730,10 +788,8 @@ struct ice_hw {
 	u8 fw_patch;		/* firmware patch version */
 	u32 fw_build;		/* firmware build number */
 
-	struct ice_fw_log_cfg fw_log;
-
 /* Device max aggregate bandwidths corresponding to the GL_PWR_MODE_CTL
- * register. Used for determining the itr/intrl granularity during
+ * register. Used for determining the ITR/INTRL granularity during
  * initialization.
  */
 #define ICE_MAX_AGG_BW_200G	0x0
@@ -756,6 +812,9 @@ struct ice_hw {
 	/* Active package version (currently active) */
 	struct ice_pkg_ver active_pkg_ver;
 	u8 active_pkg_name[ICE_PKG_NAME_SIZE];
+	u8 active_pkg_in_nvm;
+
+	enum ice_aq_err pkg_dwnld_status;
 
 	/* Driver's package ver - (from the Metadata seg) */
 	struct ice_pkg_ver pkg_ver;
@@ -775,11 +834,6 @@ struct ice_hw {
 	/* tunneling info */
 	struct ice_tunnel_table tnl;
 
-#define ICE_PKG_FILENAME	"package_file"
-#define ICE_PKG_FILENAME_EXT	"pkg"
-#define ICE_PKG_FILE_MAJ_VER	1
-#define ICE_PKG_FILE_MIN_VER	0
-
 	/* HW block tables */
 	struct ice_blk_info blk[ICE_BLK_COUNT];
 	struct ice_lock fl_profs_locks[ICE_BLK_COUNT];	/* lock fltr profiles */
@@ -797,6 +851,9 @@ struct ice_hw {
 	u16 fdir_fltr_cnt[ICE_FLTR_PTYPE_MAX];
 
 	struct ice_fd_hw_prof **fdir_prof;
+	ice_declare_bitmap(fdir_perfect_fltr, ICE_FLTR_PTYPE_MAX);
+	struct ice_lock rss_locks;	/* protect RSS configuration */
+	struct LIST_HEAD_TYPE rss_list_head;
 };
 
 /* Statistics collected by each port, VSI, VEB, and S-channel */
@@ -813,6 +870,8 @@ struct ice_eth_stats {
 	u64 tx_broadcast;		/* bptc */
 	u64 tx_discards;		/* tdpc */
 	u64 tx_errors;			/* tepc */
+	u64 rx_no_desc;			/* repc */
+	u64 rx_errors;			/* repc */
 };
 
 #define ICE_MAX_UP	8
@@ -868,9 +927,6 @@ struct ice_hw_port_stats {
 	/* flow director stats */
 	u32 fd_sb_status;
 	u64 fd_sb_match;
-#ifdef ADQ_SUPPORT
-	u64 ch_atr_match;
-#endif /* ADQ_SUPPORT */
 };
 
 enum ice_sw_fwd_act_type {
@@ -895,11 +951,10 @@ enum ice_sw_fwd_act_type {
 #define ICE_SR_CSR_PROTECTED_LIST_PTR		0x0D
 #define ICE_SR_MNG_CFG_PTR			0x0E
 #define ICE_SR_EMP_MODULE_PTR			0x0F
-#define ICE_SR_PBA_FLAGS			0x15
 #define ICE_SR_PBA_BLOCK_PTR			0x16
-#define ICE_SR_BOOT_CFG_PTR			0x17
+#define ICE_SR_BOOT_CFG_PTR			0x132
 #define ICE_SR_NVM_WOL_CFG			0x19
-#define ICE_NVM_OEM_VER_OFF			0x83
+#define ICE_NVM_OEM_VER_OFF			0x02
 #define ICE_SR_NVM_DEV_STARTER_VER		0x18
 #define ICE_SR_ALTERNATE_SAN_MAC_ADDR_PTR	0x27
 #define ICE_SR_PERMANENT_SAN_MAC_ADDR_PTR	0x28
@@ -938,9 +993,12 @@ enum ice_sw_fwd_act_type {
 #define ICE_SR_NVM_BANK_SIZE			0x43
 #define ICE_SR_1ND_OROM_BANK_PTR		0x44
 #define ICE_SR_OROM_BANK_SIZE			0x45
+#define ICE_SR_NETLIST_BANK_PTR			0x46
+#define ICE_SR_NETLIST_BANK_SIZE		0x47
 #define ICE_SR_EMP_SR_SETTINGS_PTR		0x48
 #define ICE_SR_CONFIGURATION_METADATA_PTR	0x4D
 #define ICE_SR_IMMEDIATE_VALUES_PTR		0x4E
+#define ICE_SR_POR_REGISTERS_AUTOLOAD_PTR	0x118
 
 /* Auxiliary field, mask and shift definition for Shadow RAM and NVM Flash */
 #define ICE_SR_VPD_SIZE_WORDS		512

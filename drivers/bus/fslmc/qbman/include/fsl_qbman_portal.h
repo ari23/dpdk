@@ -1,12 +1,21 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  *
  * Copyright (C) 2014 Freescale Semiconductor, Inc.
+ * Copyright 2015-2019 NXP
  *
  */
 #ifndef _FSL_QBMAN_PORTAL_H
 #define _FSL_QBMAN_PORTAL_H
 
 #include <fsl_qbman_base.h>
+
+#define SVR_LS1080A	0x87030000
+#define SVR_LS2080A	0x87010000
+#define SVR_LS2088A	0x87090000
+#define SVR_LX2160A	0x87360000
+
+/* Variable to store DPAA2 platform type */
+extern uint32_t dpaa2_svr_family;
 
 /**
  * DOC - QBMan portal APIs to implement the following functions:
@@ -15,7 +24,7 @@
  * - Enqueue, including setting the enqueue descriptor, and issuing enqueue
  *   command etc.
  * - Dequeue, including setting the dequeue descriptor, issuing dequeue command,
- *   parsing the dequeue response in DQRR and memeory, parsing the state change
+ *   parsing the dequeue response in DQRR and memory, parsing the state change
  *   notifications etc.
  * - Release, including setting the release descriptor, and issuing the buffer
  *   release command.

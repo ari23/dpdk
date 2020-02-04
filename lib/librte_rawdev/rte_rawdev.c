@@ -378,7 +378,7 @@ rte_rawdev_selftest(uint16_t dev_id)
 	struct rte_rawdev *dev = &rte_rawdevs[dev_id];
 
 	RTE_FUNC_PTR_OR_ERR_RET(*dev->dev_ops->dev_selftest, -ENOTSUP);
-	return (*dev->dev_ops->dev_selftest)();
+	return (*dev->dev_ops->dev_selftest)(dev_id);
 }
 
 int
@@ -496,15 +496,16 @@ rte_rawdev_pmd_allocate(const char *name, size_t dev_priv_size, int socket_id)
 
 	rawdev = &rte_rawdevs[dev_id];
 
-	rawdev->dev_private = rte_zmalloc_socket("rawdev private",
+	if (dev_priv_size > 0) {
+		rawdev->dev_private = rte_zmalloc_socket("rawdev private",
 				     dev_priv_size,
 				     RTE_CACHE_LINE_SIZE,
 				     socket_id);
-	if (!rawdev->dev_private) {
-		RTE_RDEV_ERR("Unable to allocate memory to Skeleton dev");
-		return NULL;
+		if (!rawdev->dev_private) {
+			RTE_RDEV_ERR("Unable to allocate memory for rawdev");
+			return NULL;
+		}
 	}
-
 
 	rawdev->dev_id = dev_id;
 	rawdev->socket_id = socket_id;

@@ -13,6 +13,7 @@
 #include <rte_atomic.h>
 #include <rte_common.h>
 #include <rte_cycles.h>
+#include <rte_eal_memconfig.h>
 #include <rte_per_lcore.h>
 #include <rte_memory.h>
 #include <rte_launch.h>
@@ -24,7 +25,8 @@
 #include <rte_pause.h>
 #include <rte_memzone.h>
 #include <rte_malloc.h>
-#include <rte_compat.h>
+#include <rte_errno.h>
+#include <rte_function_versioning.h>
 
 #include "rte_timer.h"
 
@@ -60,12 +62,11 @@ struct rte_timer_data {
 };
 
 #define RTE_MAX_DATA_ELS 64
+static const struct rte_memzone *rte_timer_data_mz;
+static int *volatile rte_timer_mz_refcnt;
 static struct rte_timer_data *rte_timer_data_arr;
 static const uint32_t default_data_id;
 static uint32_t rte_timer_subsystem_initialized;
-
-/* For maintaining older interfaces for a period */
-static struct rte_timer_data default_timer_data;
 
 /* when debug is enabled, store some statistics */
 #ifdef RTE_LIBRTE_TIMER_DEBUG
@@ -81,7 +82,8 @@ static struct rte_timer_data default_timer_data;
 static inline int
 timer_data_valid(uint32_t id)
 {
-	return !!(rte_timer_data_arr[id].internal_flags & FL_ALLOCATED);
+	return rte_timer_data_arr &&
+		(rte_timer_data_arr[id].internal_flags & FL_ALLOCATED);
 }
 
 /* validate ID and retrieve timer data pointer, or return error value */
@@ -91,7 +93,7 @@ timer_data_valid(uint32_t id)
 	timer_data = &rte_timer_data_arr[id];				\
 } while (0)
 
-int __rte_experimental
+int
 rte_timer_data_alloc(uint32_t *id_ptr)
 {
 	int i;
@@ -115,7 +117,7 @@ rte_timer_data_alloc(uint32_t *id_ptr)
 	return -ENOSPC;
 }
 
-int __rte_experimental
+int
 rte_timer_data_dealloc(uint32_t id)
 {
 	struct rte_timer_data *timer_data;
@@ -126,22 +128,6 @@ rte_timer_data_dealloc(uint32_t id)
 	return 0;
 }
 
-void
-rte_timer_subsystem_init_v20(void)
-{
-	unsigned lcore_id;
-	struct priv_timer *priv_timer = default_timer_data.priv_timer;
-
-	/* since priv_timer is static, it's zeroed by default, so only init some
-	 * fields.
-	 */
-	for (lcore_id = 0; lcore_id < RTE_MAX_LCORE; lcore_id ++) {
-		rte_spinlock_init(&priv_timer[lcore_id].list_lock);
-		priv_timer[lcore_id].prev_lcore = lcore_id;
-	}
-}
-VERSION_SYMBOL(rte_timer_subsystem_init, _v20, 2.0);
-
 /* Init the timer library. Allocate an array of timer data structs in shared
  * memory, and allocate the zeroth entry for use with original timer
  * APIs. Since the intersection of the sets of lcore ids in primary and
@@ -149,64 +135,74 @@ VERSION_SYMBOL(rte_timer_subsystem_init, _v20, 2.0);
  * multiple processes.
  */
 int
-rte_timer_subsystem_init_v1905(void)
+rte_timer_subsystem_init(void)
 {
 	const struct rte_memzone *mz;
 	struct rte_timer_data *data;
 	int i, lcore_id;
 	static const char *mz_name = "rte_timer_mz";
+	const size_t data_arr_size =
+			RTE_MAX_DATA_ELS * sizeof(*rte_timer_data_arr);
+	const size_t mem_size = data_arr_size + sizeof(*rte_timer_mz_refcnt);
+	bool do_full_init = true;
 
 	if (rte_timer_subsystem_initialized)
 		return -EALREADY;
 
-	if (rte_eal_process_type() != RTE_PROC_PRIMARY) {
-		mz = rte_memzone_lookup(mz_name);
-		if (mz == NULL)
-			return -EEXIST;
+	rte_mcfg_timer_lock();
 
-		rte_timer_data_arr = mz->addr;
+	mz = rte_memzone_lookup(mz_name);
+	if (mz == NULL) {
+		mz = rte_memzone_reserve_aligned(mz_name, mem_size,
+				SOCKET_ID_ANY, 0, RTE_CACHE_LINE_SIZE);
+		if (mz == NULL) {
+			rte_mcfg_timer_unlock();
+			return -ENOMEM;
+		}
+		do_full_init = true;
+	} else
+		do_full_init = false;
 
-		rte_timer_data_arr[default_data_id].internal_flags |=
-			FL_ALLOCATED;
-
-		rte_timer_subsystem_initialized = 1;
-
-		return 0;
-	}
-
-	mz = rte_memzone_reserve_aligned(mz_name,
-			RTE_MAX_DATA_ELS * sizeof(*rte_timer_data_arr),
-			SOCKET_ID_ANY, 0, RTE_CACHE_LINE_SIZE);
-	if (mz == NULL)
-		return -ENOMEM;
-
+	rte_timer_data_mz = mz;
 	rte_timer_data_arr = mz->addr;
+	rte_timer_mz_refcnt = (void *)((char *)mz->addr + data_arr_size);
 
-	for (i = 0; i < RTE_MAX_DATA_ELS; i++) {
-		data = &rte_timer_data_arr[i];
+	if (do_full_init) {
+		for (i = 0; i < RTE_MAX_DATA_ELS; i++) {
+			data = &rte_timer_data_arr[i];
 
-		for (lcore_id = 0; lcore_id < RTE_MAX_LCORE; lcore_id++) {
-			rte_spinlock_init(
-				&data->priv_timer[lcore_id].list_lock);
-			data->priv_timer[lcore_id].prev_lcore = lcore_id;
+			for (lcore_id = 0; lcore_id < RTE_MAX_LCORE;
+			     lcore_id++) {
+				rte_spinlock_init(
+					&data->priv_timer[lcore_id].list_lock);
+				data->priv_timer[lcore_id].prev_lcore =
+					lcore_id;
+			}
 		}
 	}
 
 	rte_timer_data_arr[default_data_id].internal_flags |= FL_ALLOCATED;
+	(*rte_timer_mz_refcnt)++;
+
+	rte_mcfg_timer_unlock();
 
 	rte_timer_subsystem_initialized = 1;
 
 	return 0;
 }
-MAP_STATIC_SYMBOL(int rte_timer_subsystem_init(void),
-		  rte_timer_subsystem_init_v1905);
-BIND_DEFAULT_SYMBOL(rte_timer_subsystem_init, _v1905, 19.05);
 
-void __rte_experimental
+void
 rte_timer_subsystem_finalize(void)
 {
-	if (rte_timer_data_arr)
-		rte_free(rte_timer_data_arr);
+	if (!rte_timer_subsystem_initialized)
+		return;
+
+	rte_mcfg_timer_lock();
+
+	if (--(*rte_timer_mz_refcnt) == 0)
+		rte_memzone_free(rte_timer_data_mz);
+
+	rte_mcfg_timer_unlock();
 
 	rte_timer_subsystem_initialized = 0;
 }
@@ -534,44 +530,15 @@ __rte_timer_reset(struct rte_timer *tim, uint64_t expire,
 
 /* Reset and start the timer associated with the timer handle tim */
 int
-rte_timer_reset_v20(struct rte_timer *tim, uint64_t ticks,
-		    enum rte_timer_type type, unsigned int tim_lcore,
-		    rte_timer_cb_t fct, void *arg)
-{
-	uint64_t cur_time = rte_get_timer_cycles();
-	uint64_t period;
-
-	if (unlikely((tim_lcore != (unsigned)LCORE_ID_ANY) &&
-			!(rte_lcore_is_enabled(tim_lcore) ||
-			  rte_lcore_has_role(tim_lcore, ROLE_SERVICE))))
-		return -1;
-
-	if (type == PERIODICAL)
-		period = ticks;
-	else
-		period = 0;
-
-	return __rte_timer_reset(tim,  cur_time + ticks, period, tim_lcore,
-			  fct, arg, 0, &default_timer_data);
-}
-VERSION_SYMBOL(rte_timer_reset, _v20, 2.0);
-
-int
-rte_timer_reset_v1905(struct rte_timer *tim, uint64_t ticks,
+rte_timer_reset(struct rte_timer *tim, uint64_t ticks,
 		      enum rte_timer_type type, unsigned int tim_lcore,
 		      rte_timer_cb_t fct, void *arg)
 {
 	return rte_timer_alt_reset(default_data_id, tim, ticks, type,
 				   tim_lcore, fct, arg);
 }
-MAP_STATIC_SYMBOL(int rte_timer_reset(struct rte_timer *tim, uint64_t ticks,
-				      enum rte_timer_type type,
-				      unsigned int tim_lcore,
-				      rte_timer_cb_t fct, void *arg),
-		  rte_timer_reset_v1905);
-BIND_DEFAULT_SYMBOL(rte_timer_reset, _v1905, 19.05);
 
-int __rte_experimental
+int
 rte_timer_alt_reset(uint32_t timer_data_id, struct rte_timer *tim,
 		    uint64_t ticks, enum rte_timer_type type,
 		    unsigned int tim_lcore, rte_timer_cb_t fct, void *arg)
@@ -640,22 +607,12 @@ __rte_timer_stop(struct rte_timer *tim, int local_is_locked,
 
 /* Stop the timer associated with the timer handle tim */
 int
-rte_timer_stop_v20(struct rte_timer *tim)
-{
-	return __rte_timer_stop(tim, 0, &default_timer_data);
-}
-VERSION_SYMBOL(rte_timer_stop, _v20, 2.0);
-
-int
-rte_timer_stop_v1905(struct rte_timer *tim)
+rte_timer_stop(struct rte_timer *tim)
 {
 	return rte_timer_alt_stop(default_data_id, tim);
 }
-MAP_STATIC_SYMBOL(int rte_timer_stop(struct rte_timer *tim),
-		  rte_timer_stop_v1905);
-BIND_DEFAULT_SYMBOL(rte_timer_stop, _v1905, 19.05);
 
-int __rte_experimental
+int
 rte_timer_alt_stop(uint32_t timer_data_id, struct rte_timer *tim)
 {
 	struct rte_timer_data *timer_data;
@@ -799,15 +756,8 @@ __rte_timer_manage(struct rte_timer_data *timer_data)
 	priv_timer[lcore_id].running_tim = NULL;
 }
 
-void
-rte_timer_manage_v20(void)
-{
-	__rte_timer_manage(&default_timer_data);
-}
-VERSION_SYMBOL(rte_timer_manage, _v20, 2.0);
-
 int
-rte_timer_manage_v1905(void)
+rte_timer_manage(void)
 {
 	struct rte_timer_data *timer_data;
 
@@ -817,10 +767,8 @@ rte_timer_manage_v1905(void)
 
 	return 0;
 }
-MAP_STATIC_SYMBOL(int rte_timer_manage(void), rte_timer_manage_v1905);
-BIND_DEFAULT_SYMBOL(rte_timer_manage, _v1905, 19.05);
 
-int __rte_experimental
+int
 rte_timer_alt_manage(uint32_t timer_data_id,
 		     unsigned int *poll_lcores,
 		     int nb_poll_lcores,
@@ -993,7 +941,7 @@ rte_timer_alt_manage(uint32_t timer_data_id,
 }
 
 /* Walk pending lists, stopping timers and calling user-specified function */
-int __rte_experimental
+int
 rte_timer_stop_all(uint32_t timer_data_id, unsigned int *walk_lcores,
 		   int nb_walk_lcores,
 		   rte_timer_stop_all_cb_t f, void *f_arg)
@@ -1030,6 +978,33 @@ rte_timer_stop_all(uint32_t timer_data_id, unsigned int *walk_lcores,
 	return 0;
 }
 
+int64_t
+rte_timer_next_ticks(void)
+{
+	unsigned int lcore_id = rte_lcore_id();
+	struct rte_timer_data *timer_data;
+	struct priv_timer *priv_timer;
+	const struct rte_timer *tm;
+	uint64_t cur_time;
+	int64_t left = -ENOENT;
+
+	TIMER_DATA_VALID_GET_OR_ERR_RET(default_data_id, timer_data, -EINVAL);
+
+	priv_timer = timer_data->priv_timer;
+	cur_time = rte_get_timer_cycles();
+
+	rte_spinlock_lock(&priv_timer[lcore_id].list_lock);
+	tm = priv_timer[lcore_id].pending_head.sl_next[0];
+	if (tm) {
+		left = tm->expire - cur_time;
+		if (left < 0)
+			left = 0;
+	}
+	rte_spinlock_unlock(&priv_timer[lcore_id].list_lock);
+
+	return left;
+}
+
 /* dump statistics about timers */
 static void
 __rte_timer_dump_stats(struct rte_timer_data *timer_data __rte_unused, FILE *f)
@@ -1056,23 +1031,13 @@ __rte_timer_dump_stats(struct rte_timer_data *timer_data __rte_unused, FILE *f)
 #endif
 }
 
-void
-rte_timer_dump_stats_v20(FILE *f)
-{
-	__rte_timer_dump_stats(&default_timer_data, f);
-}
-VERSION_SYMBOL(rte_timer_dump_stats, _v20, 2.0);
-
 int
-rte_timer_dump_stats_v1905(FILE *f)
+rte_timer_dump_stats(FILE *f)
 {
 	return rte_timer_alt_dump_stats(default_data_id, f);
 }
-MAP_STATIC_SYMBOL(int rte_timer_dump_stats(FILE *f),
-		  rte_timer_dump_stats_v1905);
-BIND_DEFAULT_SYMBOL(rte_timer_dump_stats, _v1905, 19.05);
 
-int __rte_experimental
+int
 rte_timer_alt_dump_stats(uint32_t timer_data_id __rte_unused, FILE *f)
 {
 	struct rte_timer_data *timer_data;

@@ -12,6 +12,9 @@
 #define ENETC_DEV_ID_VF		0xef00
 #define ENETC_DEV_ID		0xe100
 
+/* BD RING ALIGNMENT */
+#define ENETC_BD_RING_ALIGN	128
+
 /* ENETC register block BAR */
 #define ENETC_BAR_REGS			0x0
 
@@ -215,8 +218,8 @@ struct enetc_hw {
 };
 
 struct enetc_eth_mac_info {
-	uint8_t addr[ETHER_ADDR_LEN];
-	uint8_t perm_addr[ETHER_ADDR_LEN];
+	uint8_t addr[RTE_ETHER_ADDR_LEN];
+	uint8_t perm_addr[RTE_ETHER_ADDR_LEN];
 	uint8_t get_link_status;
 };
 

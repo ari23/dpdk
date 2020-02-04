@@ -60,6 +60,9 @@ static rte_spinlock_t mlx4_shared_data_lock = RTE_SPINLOCK_INITIALIZER;
 /* Process local data for secondary processes. */
 static struct mlx4_local_data mlx4_local_data;
 
+/** Driver-specific log messages type. */
+int mlx4_logtype;
+
 /** Configuration structure for device arguments. */
 struct mlx4_conf {
 	struct {
@@ -244,6 +247,9 @@ mlx4_dev_configure(struct rte_eth_dev *dev)
 	struct mlx4_priv *priv = dev->data->dev_private;
 	struct rte_flow_error error;
 	int ret;
+
+	if (dev->data->dev_conf.rxmode.mq_mode & ETH_MQ_RX_RSS_FLAG)
+		dev->data->dev_conf.rxmode.offloads |= DEV_RX_OFFLOAD_RSS_HASH;
 
 	/* Prepare internal flow rules. */
 	ret = mlx4_flow_sync(priv, &error);
@@ -694,6 +700,7 @@ mlx4_init_once(void)
 {
 	struct mlx4_shared_data *sd;
 	struct mlx4_local_data *ld = &mlx4_local_data;
+	int ret = 0;
 
 	if (mlx4_init_shared_data())
 		return -rte_errno;
@@ -708,21 +715,26 @@ mlx4_init_once(void)
 		rte_rwlock_init(&sd->mem_event_rwlock);
 		rte_mem_event_callback_register("MLX4_MEM_EVENT_CB",
 						mlx4_mr_mem_event_cb, NULL);
-		mlx4_mp_init_primary();
-		sd->init_done = true;
+		ret = mlx4_mp_init_primary();
+		if (ret)
+			goto out;
+		sd->init_done = 1;
 		break;
 	case RTE_PROC_SECONDARY:
 		if (ld->init_done)
 			break;
-		mlx4_mp_init_secondary();
+		ret = mlx4_mp_init_secondary();
+		if (ret)
+			goto out;
 		++sd->secondary_cnt;
-		ld->init_done = true;
+		ld->init_done = 1;
 		break;
 	default:
 		break;
 	}
+out:
 	rte_spinlock_unlock(&sd->lock);
-	return 0;
+	return ret;
 }
 
 /**
@@ -754,6 +766,7 @@ mlx4_pci_probe(struct rte_pci_driver *pci_drv, struct rte_pci_device *pci_dev)
 	};
 	unsigned int vf;
 	int i;
+	char ifname[IF_NAMESIZE];
 
 	(void)pci_drv;
 	err = mlx4_init_once();
@@ -841,7 +854,7 @@ mlx4_pci_probe(struct rte_pci_driver *pci_drv, struct rte_pci_device *pci_dev)
 		struct ibv_pd *pd = NULL;
 		struct mlx4_priv *priv = NULL;
 		struct rte_eth_dev *eth_dev = NULL;
-		struct ether_addr mac;
+		struct rte_ether_addr mac;
 		char name[RTE_ETH_NAME_MAX_LEN];
 
 		/* If port is not enabled, skip. */
@@ -945,7 +958,7 @@ mlx4_pci_probe(struct rte_pci_driver *pci_drv, struct rte_pci_device *pci_dev)
 		priv->device_attr = device_attr;
 		priv->port = port;
 		priv->pd = pd;
-		priv->mtu = ETHER_MTU;
+		priv->mtu = RTE_ETHER_MTU;
 		priv->vf = vf;
 		priv->hw_csum =	!!(device_attr.device_cap_flags &
 				   IBV_DEVICE_RAW_IP_CSUM);
@@ -993,17 +1006,15 @@ mlx4_pci_probe(struct rte_pci_driver *pci_drv, struct rte_pci_device *pci_dev)
 		     mac.addr_bytes[4], mac.addr_bytes[5]);
 		/* Register MAC address. */
 		priv->mac[0] = mac;
-#ifndef NDEBUG
-		{
-			char ifname[IF_NAMESIZE];
 
-			if (mlx4_get_ifname(priv, &ifname) == 0)
-				DEBUG("port %u ifname is \"%s\"",
-				      priv->port, ifname);
-			else
-				DEBUG("port %u ifname is unknown", priv->port);
+		if (mlx4_get_ifname(priv, &ifname) == 0) {
+			DEBUG("port %u ifname is \"%s\"",
+			      priv->port, ifname);
+			priv->if_index = if_nametoindex(ifname);
+		} else {
+			DEBUG("port %u ifname is unknown", priv->port);
 		}
-#endif
+
 		/* Get actual MTU if possible. */
 		mlx4_mtu_get(priv, &priv->mtu);
 		DEBUG("port %u MTU is %u", priv->port, priv->mtu);
@@ -1133,8 +1144,7 @@ static struct rte_pci_driver mlx4_driver = {
 	},
 	.id_table = mlx4_pci_id_map,
 	.probe = mlx4_pci_probe,
-	.drv_flags = RTE_PCI_DRV_INTR_LSC |
-		     RTE_PCI_DRV_INTR_RMV,
+	.drv_flags = RTE_PCI_DRV_INTR_LSC | RTE_PCI_DRV_INTR_RMV,
 };
 
 #ifdef RTE_IBVERBS_LINK_DLOPEN
@@ -1272,6 +1282,11 @@ glue_error:
  */
 RTE_INIT(rte_mlx4_pmd_init)
 {
+	/* Initialize driver log type. */
+	mlx4_logtype = rte_log_register("pmd.net.mlx4");
+	if (mlx4_logtype >= 0)
+		rte_log_set_level(mlx4_logtype, RTE_LOG_NOTICE);
+
 	/*
 	 * MLX4_DEVICE_FATAL_CLEANUP tells ibv_destroy functions we
 	 * want to get success errno value in case of calling them

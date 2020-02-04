@@ -85,6 +85,12 @@ mp_primary_handle(const struct rte_mp_msg *mp_msg, const void *peer)
 		res->result = 0;
 		ret = rte_mp_reply(&mp_res, peer);
 		break;
+	case MLX5_MP_REQ_QUEUE_STATE_MODIFY:
+		mp_init_msg(dev, &mp_res, param->type);
+		res->result = mlx5_queue_state_modify_primary
+					(dev, &param->args.state_modify);
+		ret = rte_mp_reply(&mp_res, peer);
+		break;
 	default:
 		rte_errno = EINVAL;
 		DRV_LOG(ERR, "port %u invalid mp request type",
@@ -180,8 +186,9 @@ mp_req_on_rxtx(struct rte_eth_dev *dev, enum mlx5_mp_req_type type)
 	mp_init_msg(dev, &mp_req, type);
 	ret = rte_mp_request_sync(&mp_req, &mp_rep, &ts);
 	if (ret) {
-		DRV_LOG(ERR, "port %u failed to request stop/start Rx/Tx (%d)",
-			dev->data->port_id, type);
+		if (rte_errno != ENOTSUP)
+			DRV_LOG(ERR, "port %u failed to request stop/start Rx/Tx (%d)",
+				dev->data->port_id, type);
 		goto exit;
 	}
 	if (mp_rep.nb_sent != mp_rep.nb_received) {
@@ -271,6 +278,46 @@ mlx5_mp_req_mr_create(struct rte_eth_dev *dev, uintptr_t addr)
 }
 
 /**
+ * Request Verbs queue state modification to the primary process.
+ *
+ * @param[in] dev
+ *   Pointer to Ethernet structure.
+ * @param sm
+ *   State modify parameters.
+ *
+ * @return
+ *   0 on success, a negative errno value otherwise and rte_errno is set.
+ */
+int
+mlx5_mp_req_queue_state_modify(struct rte_eth_dev *dev,
+			       struct mlx5_mp_arg_queue_state_modify *sm)
+{
+	struct rte_mp_msg mp_req;
+	struct rte_mp_msg *mp_res;
+	struct rte_mp_reply mp_rep;
+	struct mlx5_mp_param *req = (struct mlx5_mp_param *)mp_req.param;
+	struct mlx5_mp_param *res;
+	struct timespec ts = {.tv_sec = MLX5_MP_REQ_TIMEOUT_SEC, .tv_nsec = 0};
+	int ret;
+
+	assert(rte_eal_process_type() == RTE_PROC_SECONDARY);
+	mp_init_msg(dev, &mp_req, MLX5_MP_REQ_QUEUE_STATE_MODIFY);
+	req->args.state_modify = *sm;
+	ret = rte_mp_request_sync(&mp_req, &mp_rep, &ts);
+	if (ret) {
+		DRV_LOG(ERR, "port %u request to primary process failed",
+			dev->data->port_id);
+		return -rte_errno;
+	}
+	assert(mp_rep.nb_received == 1);
+	mp_res = &mp_rep.msgs[0];
+	res = (struct mlx5_mp_param *)mp_res->param;
+	ret = res->result;
+	free(mp_rep.msgs);
+	return ret;
+}
+
+/**
  * Request Verbs command file descriptor for mmap to the primary process.
  *
  * @param[in] dev
@@ -320,11 +367,18 @@ exit:
 /**
  * Initialize by primary process.
  */
-void
+int
 mlx5_mp_init_primary(void)
 {
+	int ret;
+
 	assert(rte_eal_process_type() == RTE_PROC_PRIMARY);
-	rte_mp_action_register(MLX5_MP_NAME, mp_primary_handle);
+
+	/* primary is allowed to not support IPC */
+	ret = rte_mp_action_register(MLX5_MP_NAME, mp_primary_handle);
+	if (ret && rte_errno != ENOTSUP)
+		return -1;
+	return 0;
 }
 
 /**
@@ -340,11 +394,11 @@ mlx5_mp_uninit_primary(void)
 /**
  * Initialize by secondary process.
  */
-void
+int
 mlx5_mp_init_secondary(void)
 {
 	assert(rte_eal_process_type() == RTE_PROC_SECONDARY);
-	rte_mp_action_register(MLX5_MP_NAME, mp_secondary_handle);
+	return rte_mp_action_register(MLX5_MP_NAME, mp_secondary_handle);
 }
 
 /**

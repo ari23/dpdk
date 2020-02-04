@@ -4,9 +4,9 @@
 ABI and API Deprecation
 =======================
 
-See the :doc:`guidelines document for details of the ABI policy </contributing/versioning>`.
-API and ABI deprecation notices are to be posted here.
-
+See the guidelines document for details of the :doc:`ABI policy
+<../contributing/abi_policy>`. API and ABI deprecation notices are to be posted
+here.
 
 Deprecation Notices
 -------------------
@@ -20,6 +20,9 @@ Deprecation Notices
 * kvargs: The function ``rte_kvargs_process`` will get a new parameter
   for returning key match count. It will ease handling of no-match case.
 
+* eal: The function ``rte_eal_remote_launch`` will return new error codes
+  after read or write error on the pipe, instead of calling ``rte_panic``.
+
 * eal: both declaring and identifying devices will be streamlined in v18.11.
   New functions will appear to query a specific port from buses, classes of
   device and device drivers. Device declaration will be made coherent with the
@@ -31,22 +34,20 @@ Deprecation Notices
 
     + ``rte_eal_devargs_type_count``
 
-* vfio: removal of ``rte_vfio_dma_map`` and ``rte_vfio_dma_unmap`` APIs which
-  have been replaced with ``rte_dev_dma_map`` and ``rte_dev_dma_unmap``
-  functions.  The due date for the removal targets DPDK 20.02.
-
-* pci: Several exposed functions are misnamed.
-  The following functions are deprecated starting from v17.11 and are replaced:
-
-  - ``eal_parse_pci_BDF`` replaced by ``rte_pci_addr_parse``
-  - ``eal_parse_pci_DomBDF`` replaced by ``rte_pci_addr_parse``
-  - ``rte_eal_compare_pci_addr`` replaced by ``rte_pci_addr_cmp``
+* eal: The ``rte_logs`` struct and global symbol will be made private to
+  remove it from the externally visible ABI and allow it to be updated in the
+  future.
 
 * dpaa2: removal of ``rte_dpaa2_memsegs`` structure which has been replaced
   by a pa-va search library. This structure was earlier being used for holding
   memory segments used by dpaa2 driver for faster pa->va translation. This
   structure would be made internal (or removed if all dependencies are cleared)
   in future releases.
+
+* mempool: starting from v20.05, the API of rte_mempool_populate_iova()
+  and rte_mempool_populate_virt() will change to return 0 instead
+  of -EINVAL when there is not enough room to store one object. The ABI
+  will be preserved until 20.11.
 
 * ethdev: the legacy filter API, including
   ``rte_eth_dev_filter_supported()``, ``rte_eth_dev_filter_ctrl()`` as well
@@ -56,29 +57,37 @@ Deprecation Notices
   Target release for removal of the legacy API will be defined once most
   PMDs have switched to rte_flow.
 
-* kni: remove KNI ethtool support. To clarify, this is not to remove the KNI,
-  but only to remove ethtool support of it that is disabled by default and
-  can be enabled via ``CONFIG_RTE_KNI_KMOD_ETHTOOL`` config option.
-  Existing KNI ethtool implementation is only supported by ``igb`` & ``ixgbe``
-  drivers, by using a copy of kernel drivers in DPDK. This model cannot be
-  extended to all drivers in DPDK and it is too much effort to maintain
-  kernel modules in DPDK. As a result users won't be able to use ``ethtool``
-  via ``igb`` & ``ixgbe`` anymore.
+* ethdev: Update API functions returning ``void`` to return ``int`` with
+  negative errno values to indicate various error conditions (e.g.
+  invalid port ID, unsupported operation, failed operation):
 
-* cryptodev: New member in ``rte_cryptodev_config`` to allow applications to
-  disable features supported by the crypto device. Only the following features
-  would be allowed to be disabled this way,
+  - ``rte_eth_dev_stop``
+  - ``rte_eth_dev_close``
 
-  - ``RTE_CRYPTODEV_FF_SYMMETRIC_CRYPTO``
-  - ``RTE_CRYPTODEV_FF_ASYMMETRIC_CRYPTO``
-  - ``RTE_CRYPTODEV_FF_SECURITY``
+* ethdev: New offload flags ``DEV_RX_OFFLOAD_FLOW_MARK`` will be added in 19.11.
+  This will allow application to enable or disable PMDs from updating
+  ``rte_mbuf::hash::fdir``.
+  This scheme will allow PMDs to avoid writes to ``rte_mbuf`` fields on Rx and
+  thereby improve Rx performance if application wishes do so.
+  In 19.11 PMDs will still update the field even when the offload is not
+  enabled.
 
-  Disabling unused features would facilitate efficient usage of HW/SW offload.
+* cryptodev: support for using IV with all sizes is added, J0 still can
+  be used but only when IV length in following structs ``rte_crypto_auth_xform``,
+  ``rte_crypto_aead_xform`` is set to zero. When IV length is greater or equal
+  to one it means it represents IV, when is set to zero it means J0 is used
+  directly, in this case 16 bytes of J0 need to be passed.
 
-  - Member ``uint64_t ff_disable`` in ``rte_cryptodev_config``
+* sched: To allow more traffic classes, flexible mapping of pipe queues to
+  traffic classes, and subport level configuration of pipes and queues
+  changes will be made to macros, data structures and API functions defined
+  in "rte_sched.h". These changes are aligned to improvements suggested in the
+  RFC https://mails.dpdk.org/archives/dev/2018-November/120035.html.
 
-  The field would be added in v19.08.
+* metrics: The function ``rte_metrics_init`` will have a non-void return
+  in order to notify errors instead of calling ``rte_exit``.
 
-* cryptodev: the ``uint8_t *data`` member of ``key`` structure in the xforms
-  structure (``rte_crypto_cipher_xform``, ``rte_crypto_auth_xform``, and
-  ``rte_crypto_aead_xform``) will be changed to ``const uint8_t *data``.
+* power: ``rte_power_set_env`` function will no longer return 0 on attempt
+  to set new power environment if power environment was already initialized.
+  In this case the function will return -1 unless the environment is unset first
+  (using ``rte_power_unset_env``). Other function usage scenarios will not change.

@@ -178,8 +178,9 @@ mp_req_on_rxtx(struct rte_eth_dev *dev, enum mlx4_mp_req_type type)
 	mp_init_msg(dev, &mp_req, type);
 	ret = rte_mp_request_sync(&mp_req, &mp_rep, &ts);
 	if (ret) {
-		ERROR("port %u failed to request stop/start Rx/Tx (%d)",
-		      dev->data->port_id, type);
+		if (rte_errno != ENOTSUP)
+			ERROR("port %u failed to request stop/start Rx/Tx (%d)",
+					dev->data->port_id, type);
 		goto exit;
 	}
 	if (mp_rep.nb_sent != mp_rep.nb_received) {
@@ -316,11 +317,18 @@ exit:
 /**
  * Initialize by primary process.
  */
-void
+int
 mlx4_mp_init_primary(void)
 {
+	int ret;
+
 	assert(rte_eal_process_type() == RTE_PROC_PRIMARY);
-	rte_mp_action_register(MLX4_MP_NAME, mp_primary_handle);
+
+	/* primary is allowed to not support IPC */
+	ret = rte_mp_action_register(MLX4_MP_NAME, mp_primary_handle);
+	if (ret && rte_errno != ENOTSUP)
+		return -1;
+	return 0;
 }
 
 /**
@@ -336,11 +344,11 @@ mlx4_mp_uninit_primary(void)
 /**
  * Initialize by secondary process.
  */
-void
+int
 mlx4_mp_init_secondary(void)
 {
 	assert(rte_eal_process_type() == RTE_PROC_SECONDARY);
-	rte_mp_action_register(MLX4_MP_NAME, mp_secondary_handle);
+	return rte_mp_action_register(MLX4_MP_NAME, mp_secondary_handle);
 }
 
 /**

@@ -145,8 +145,8 @@
 					.increment = 0			\
 				},					\
 				.digest_size = {			\
-					.min = 16,			\
-					.max = 16,			\
+					.min = 12,			\
+					.max = 12,			\
 					.increment = 0			\
 				},					\
 				.aad_size = { 0 },			\
@@ -167,7 +167,7 @@
 					.increment = 0			\
 				},					\
 				.digest_size = {			\
-					.min = 12,			\
+					.min = 4,			\
 					.max = 16,			\
 					.increment = 4			\
 				}					\
@@ -590,6 +590,38 @@
 					.max = 16,			\
 					.increment = 0			\
 				}					\
+			}, }						\
+		}, }							\
+	}
+
+#define QAT_EXTRA_GEN3_SYM_CAPABILITIES					\
+	{	/* Chacha20-Poly1305 */					\
+	.op = RTE_CRYPTO_OP_TYPE_SYMMETRIC,			\
+		{.sym = {						\
+			.xform_type = RTE_CRYPTO_SYM_XFORM_AEAD,	\
+			{.aead = {					\
+				.algo = RTE_CRYPTO_AEAD_CHACHA20_POLY1305, \
+				.block_size = 64,			\
+				.key_size = {				\
+					.min = 32,			\
+					.max = 32,			\
+					.increment = 0			\
+				},					\
+				.digest_size = {			\
+					.min = 16,			\
+					.max = 16,			\
+					.increment = 0			\
+				},					\
+				.aad_size = {				\
+					.min = 0,			\
+					.max = 240,			\
+					.increment = 1			\
+				},					\
+				.iv_size = {				\
+					.min = 12,			\
+					.max = 12,			\
+					.increment = 0			\
+				},					\
 			}, }						\
 		}, }							\
 	}

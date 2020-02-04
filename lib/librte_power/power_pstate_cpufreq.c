@@ -14,9 +14,10 @@
 #include <errno.h>
 #include <inttypes.h>
 
-#include <rte_string_fns.h>
-#include <rte_memcpy.h>
 #include <rte_atomic.h>
+#include <rte_memcpy.h>
+#include <rte_memory.h>
+#include <rte_string_fns.h>
 
 #include "power_pstate_cpufreq.h"
 #include "power_common.h"
@@ -32,7 +33,7 @@
 
 #define FOPEN_OR_ERR_RET(f, retval) do { \
 		if ((f) == NULL) { \
-			RTE_LOG(ERR, POWER, "File not openned\n"); \
+			RTE_LOG(ERR, POWER, "File not opened\n"); \
 			return retval; \
 		} \
 } while (0)
@@ -158,6 +159,7 @@ power_init_for_setting_freq(struct pstate_power_info *pi)
 	char *s_base;
 	uint32_t base_ratio = 0;
 	uint64_t max_non_turbo = 0;
+	int  ret_val = 0;
 
 	snprintf(fullpath_min, sizeof(fullpath_min), POWER_SYSFILE_MIN_FREQ,
 			pi->lcore_id);
@@ -199,8 +201,10 @@ power_init_for_setting_freq(struct pstate_power_info *pi)
 
 	/* Add MSR read to detect turbo status */
 
-	if (power_rdmsr(PLATFORM_INFO, &max_non_turbo, pi->lcore_id) < 0)
-		return -1;
+	if (power_rdmsr(PLATFORM_INFO, &max_non_turbo, pi->lcore_id) < 0) {
+		ret_val = -1;
+		goto out;
+	}
 
 	max_non_turbo = (max_non_turbo&NON_TURBO_MASK)>>NON_TURBO_OFFSET;
 
@@ -219,7 +223,9 @@ power_init_for_setting_freq(struct pstate_power_info *pi)
 	pi->core_base_freq = base_ratio * BUS_FREQ;
 
 out:
-	return 0;
+	if (f_base != NULL)
+		fclose(f_base);
+	return ret_val;
 }
 
 static int
@@ -281,7 +287,7 @@ set_freq_internal(struct pstate_power_info *pi, uint32_t idx)
 			return -1;
 		}
 
-		POWER_DEBUG_TRACE("Freqency '%u' to be set for lcore %u\n",
+		POWER_DEBUG_TRACE("Frequency '%u' to be set for lcore %u\n",
 				  target_freq, pi->lcore_id);
 
 		fflush(pi->f_cur_min);
@@ -304,7 +310,7 @@ set_freq_internal(struct pstate_power_info *pi, uint32_t idx)
 			return -1;
 		}
 
-		POWER_DEBUG_TRACE("Freqency '%u' to be set for lcore %u\n",
+		POWER_DEBUG_TRACE("Frequency '%u' to be set for lcore %u\n",
 				  target_freq, pi->lcore_id);
 
 		fflush(pi->f_cur_max);
@@ -690,7 +696,8 @@ power_pstate_cpufreq_freq_up(unsigned int lcore_id)
 	}
 
 	pi = &lcore_power_info[lcore_id];
-	if (pi->curr_idx == 0)
+	if (pi->curr_idx == 0 ||
+	    (pi->curr_idx == 1 && pi->turbo_available && !pi->turbo_enable))
 		return 0;
 
 	/* Frequencies in the array are from high to low. */

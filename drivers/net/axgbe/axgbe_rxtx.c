@@ -75,7 +75,7 @@ int axgbe_dev_rx_queue_setup(struct rte_eth_dev *dev, uint16_t queue_idx,
 	rxq->dma_tail_reg = (volatile uint32_t *)((uint8_t *)rxq->dma_regs +
 						  DMA_CH_RDTR_LO);
 	if (dev->data->dev_conf.rxmode.offloads & DEV_RX_OFFLOAD_KEEP_CRC)
-		rxq->crc_len = ETHER_CRC_LEN;
+		rxq->crc_len = RTE_ETHER_CRC_LEN;
 	else
 		rxq->crc_len = 0;
 
@@ -229,6 +229,7 @@ axgbe_recv_pkts(void *rx_queue, struct rte_mbuf **rx_pkts,
 				    (unsigned int)rxq->queue_id);
 			rte_eth_devices[
 				rxq->port_id].data->rx_mbuf_alloc_failed++;
+			rxq->rx_mbuf_alloc_failed++;
 			break;
 		}
 		pidx = idx + 1;
@@ -342,7 +343,7 @@ int axgbe_dev_tx_queue_setup(struct rte_eth_dev *dev, uint16_t queue_idx,
 	const struct rte_memzone *tz;
 
 	tx_desc = nb_desc;
-	pdata = (struct axgbe_port *)dev->data->dev_private;
+	pdata = dev->data->dev_private;
 
 	/*
 	 * validate tx descriptors count

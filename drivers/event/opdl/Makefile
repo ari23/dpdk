@@ -9,6 +9,7 @@ LIB = librte_pmd_opdl_event.a
 # build flags
 CFLAGS += -O3
 CFLAGS += $(WERROR_FLAGS)
+CFLAGS += -DALLOW_EXPERIMENTAL_API
 # for older GCC versions, allow us to initialize an event using
 # designated initializers.
 ifeq ($(CONFIG_RTE_TOOLCHAIN_GCC),y)
@@ -19,9 +20,6 @@ endif
 
 LDLIBS += -lrte_eal -lrte_eventdev -lrte_kvargs
 LDLIBS += -lrte_bus_vdev -lrte_mbuf -lrte_mempool
-
-# library version
-LIBABIVER := 1
 
 # versioning export map
 EXPORT_MAP := rte_pmd_opdl_event_version.map

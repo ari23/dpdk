@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause
  *
  *   Copyright (c) 2016 Freescale Semiconductor, Inc. All rights reserved.
- *   Copyright 2016-2018 NXP
+ *   Copyright 2016-2019 NXP
  *
  */
 
@@ -22,11 +22,6 @@
 #endif
 #define lower_32_bits(x) ((uint32_t)(x))
 #define upper_32_bits(x) ((uint32_t)(((x) >> 16) >> 16))
-
-#define SVR_LS1080A             0x87030000
-#define SVR_LS2080A             0x87010000
-#define SVR_LS2088A             0x87090000
-#define SVR_LX2160A             0x87360000
 
 #ifndef VLAN_TAG_SIZE
 #define VLAN_TAG_SIZE   4 /** < Vlan Header Length */
@@ -64,6 +59,8 @@
 #define DPAA2_SWP_CINH_REGION		1
 #define DPAA2_SWP_CENA_MEM_REGION	2
 
+#define DPAA2_MAX_TX_RETRY_COUNT	10000
+
 #define MC_PORTAL_INDEX		0
 #define NUM_DPIO_REGIONS	2
 #define NUM_DQS_PER_QUEUE       2
@@ -76,10 +73,6 @@
 #define MAX_BPID 256
 #define DPAA2_MBUF_HW_ANNOTATION	64
 #define DPAA2_FD_PTA_SIZE		0
-
-#if (DPAA2_MBUF_HW_ANNOTATION + DPAA2_FD_PTA_SIZE) > RTE_PKTMBUF_HEADROOM
-#error "Annotation requirement is more than RTE_PKTMBUF_HEADROOM"
-#endif
 
 /* we will re-use the HEADROOM for annotation in RX */
 #define DPAA2_HW_BUF_RESERVE	0
@@ -154,10 +147,10 @@ struct dpaa2_queue {
 		struct rte_eth_dev_data *eth_data;
 		struct rte_cryptodev_data *crypto_data;
 	};
-	int32_t eventfd;	/*!< Event Fd of this queue */
 	uint32_t fqid;		/*!< Unique ID of this queue */
-	uint8_t tc_index;	/*!< traffic class identifier */
 	uint16_t flow_id;	/*!< To be used by DPAA2 frmework */
+	uint8_t tc_index;	/*!< traffic class identifier */
+	uint8_t cgid;		/*! < Congestion Group id for this queue */
 	uint64_t rx_pkts;
 	uint64_t tx_pkts;
 	uint64_t err_pkts;
@@ -166,9 +159,12 @@ struct dpaa2_queue {
 		struct qbman_result *cscn;
 	};
 	struct rte_event ev;
+	int32_t eventfd;	/*!< Event Fd of this queue */
 	dpaa2_queue_cb_dqrr_t *cb;
 	dpaa2_queue_cb_eqresp_free_t *cb_eqresp_free;
 	struct dpaa2_bp_info *bp_array;
+	/*to store tx_conf_queue corresponding to tx_queue*/
+	struct dpaa2_queue *tx_conf_queue;
 };
 
 struct swp_active_dqs {
@@ -189,6 +185,17 @@ struct dpaa2_dpci_dev {
 	uint32_t dpci_id; /*HW ID for DPCI object */
 	struct dpaa2_queue rx_queue[DPAA2_DPCI_MAX_QUEUES];
 	struct dpaa2_queue tx_queue[DPAA2_DPCI_MAX_QUEUES];
+};
+
+struct dpaa2_dpcon_dev {
+	TAILQ_ENTRY(dpaa2_dpcon_dev) next;
+	struct fsl_mc_io dpcon;
+	uint16_t token;
+	rte_atomic16_t in_use;
+	uint32_t dpcon_id;
+	uint16_t qbman_ch_id;
+	uint8_t num_priorities;
+	uint8_t channel_index;
 };
 
 /*! Global MCP list */
@@ -234,6 +241,7 @@ enum qbman_fd_format {
 	((fd)->simple.frc = (0x80000000 | (len)))
 #define DPAA2_GET_FD_FRC_PARSE_SUM(fd)	\
 			((uint16_t)(((fd)->simple.frc & 0xffff0000) >> 16))
+#define DPAA2_RESET_FD_FRC(fd)		((fd)->simple.frc = 0)
 #define DPAA2_SET_FD_FRC(fd, _frc)	((fd)->simple.frc = _frc)
 #define DPAA2_RESET_FD_CTRL(fd)	 ((fd)->simple.ctrl = 0)
 

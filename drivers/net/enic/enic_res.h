@@ -11,6 +11,16 @@
 #include "vnic_wq.h"
 #include "vnic_rq.h"
 
+#define min_t(type, x, y) ({                    \
+	type __min1 = (x);                      \
+	type __min2 = (y);                      \
+	__min1 < __min2 ? __min1 : __min2; })
+
+#define max_t(type, x, y) ({                    \
+	type __max1 = (x);                      \
+	type __max2 = (y);                      \
+	__max1 > __max2 ? __max1 : __max2; })
+
 #define ENIC_MIN_WQ_DESCS		64
 #define ENIC_MAX_WQ_DESCS		4096
 #define ENIC_MIN_RQ_DESCS		64
@@ -55,15 +65,15 @@
 
 #define ENIC_SETTING(enic, f) ((enic->config.flags & VENETF_##f) ? 1 : 0)
 
-
 struct enic;
 
 int enic_get_vnic_config(struct enic *);
-int enic_set_nic_cfg(struct enic *enic, u8 rss_default_cpu, u8 rss_hash_type,
-	u8 rss_hash_bits, u8 rss_base_cpu, u8 rss_enable, u8 tso_ipid_split_en,
-	u8 ig_vlan_strip_en);
-int enic_set_rss_key(struct enic *enic, dma_addr_t key_pa, u64 len);
-int enic_set_rss_cpu(struct enic *enic, dma_addr_t cpu_pa, u64 len);
+int enic_set_nic_cfg(struct enic *enic, uint8_t rss_default_cpu,
+		     uint8_t rss_hash_type, uint8_t rss_hash_bits,
+		     uint8_t rss_base_cpu, uint8_t rss_enable,
+		     uint8_t tso_ipid_split_en, uint8_t ig_vlan_strip_en);
+int enic_set_rss_key(struct enic *enic, dma_addr_t key_pa, uint64_t len);
+int enic_set_rss_cpu(struct enic *enic, dma_addr_t cpu_pa, uint64_t len);
 void enic_get_res_counts(struct enic *enic);
 void enic_init_vnic_resources(struct enic *enic);
 int enic_alloc_vnic_resources(struct enic *);

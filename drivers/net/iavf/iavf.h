@@ -6,7 +6,11 @@
 #define _IAVF_ETHDEV_H_
 
 #include <rte_kvargs.h>
-#include "base/iavf_type.h"
+#include <iavf_prototype.h>
+#include <iavf_adminq_cmd.h>
+#include <iavf_type.h>
+
+#include "iavf_log.h"
 
 #define IAVF_AQ_LEN               32
 #define IAVF_AQ_BUF_SZ            4096
@@ -57,7 +61,7 @@
  */
 #define IAVF_VLAN_TAG_SIZE               4
 #define IAVF_ETH_OVERHEAD \
-	(ETHER_HDR_LEN + ETHER_CRC_LEN + IAVF_VLAN_TAG_SIZE * 2)
+	(RTE_ETHER_HDR_LEN + RTE_ETHER_CRC_LEN + IAVF_VLAN_TAG_SIZE * 2)
 
 #define IAVF_32_BIT_WIDTH (CHAR_BIT * 4)
 #define IAVF_48_BIT_WIDTH (CHAR_BIT * 6)
@@ -101,7 +105,7 @@ struct iavf_info {
 	/* Event from pf */
 	bool dev_closed;
 	bool link_up;
-	enum virtchnl_link_speed link_speed;
+	uint32_t link_speed;
 
 	struct iavf_vsi vsi;
 	bool vf_reset;
@@ -127,6 +131,7 @@ struct iavf_adapter {
 	/* For vector PMD */
 	bool rx_vec_allowed;
 	bool tx_vec_allowed;
+	bool stopped;
 };
 
 /* IAVF_DEV_PRIVATE_TO */
@@ -173,6 +178,17 @@ struct iavf_cmd_info {
 	uint32_t out_size;      /* buffer size for response */
 };
 
+/* notify current command done. Only call in case execute
+ * _atomic_set_cmd successfully.
+ */
+static inline void
+_notify_cmd(struct iavf_info *vf, uint32_t msg_ret)
+{
+	vf->cmd_retval = msg_ret;
+	rte_wmb();
+	vf->pend_cmd = VIRTCHNL_OP_UNKNOWN;
+}
+
 /* clear current command. Only call in case execute
  * _atomic_set_cmd successfully.
  */
@@ -217,6 +233,6 @@ int iavf_query_stats(struct iavf_adapter *adapter,
 int iavf_config_promisc(struct iavf_adapter *adapter, bool enable_unicast,
 		       bool enable_multicast);
 int iavf_add_del_eth_addr(struct iavf_adapter *adapter,
-			 struct ether_addr *addr, bool add);
+			 struct rte_ether_addr *addr, bool add);
 int iavf_add_del_vlan(struct iavf_adapter *adapter, uint16_t vlanid, bool add);
 #endif /* _IAVF_ETHDEV_H_ */
