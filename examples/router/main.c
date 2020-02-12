@@ -293,6 +293,7 @@ lcore_main(void)
 					rte_ether_addr_copy(&addr, &eth_h->s_addr);
 
 					arp_h->arp_opcode = rte_cpu_to_be_16(RTE_ARP_OP_REPLY);
+					arp_op = RTE_ARP_OP_REPLY;
 					rte_ether_addr_copy(&arp_h->arp_data.arp_tha,
 										&eth_addr);
 					rte_ether_addr_copy(&arp_h->arp_data.arp_sha,
@@ -309,8 +310,8 @@ lcore_main(void)
 						   "pln=%d op=%u (%s)\n",
 						   RTE_BE_TO_CPU_16(arp_h->arp_hardware),
 						   arp_pro, arp_h->arp_hlen,
-						   arp_h->arp_plen, arp_h->arp_opcode,
-						   arp_op_name(arp_h->arp_opcode));
+						   arp_h->arp_plen, arp_op,
+						   arp_op_name(arp_op));
 					pkts_burst[nb_replies++] = pkt;
 				}
 
